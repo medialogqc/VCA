@@ -24,9 +24,10 @@ import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
 import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry;
 
 /**
- * Magic Mirror main class.
+ * Chroma main class.
  * 
  * @author Boni Garcia (bgarcia@gsyc.es)
+ * @author David Fernandez (d.fernandezlop@gmail.com)
  * @since 5.0.0
  */
 @Configuration
@@ -34,11 +35,10 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 @EnableAutoConfiguration
 public class NuboNoseJavaApp implements WebSocketConfigurer {
 
-	final static String DEFAULT_KMS_WS_URI = "ws://localhost:8888/kurento";
+	final static String DEFAULT_KMS_WS_URI = "ws://localhost:8888/kurento";	
 
 	@Bean
 	public NuboNoseJavaHandler handler() {
-		System.out.println("Returning Handler");
 		return new NuboNoseJavaHandler();
 	}
 
@@ -48,6 +48,7 @@ public class NuboNoseJavaApp implements WebSocketConfigurer {
 				DEFAULT_KMS_WS_URI));
 	}
 
+	@Override
 	public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
 		registry.addHandler(handler(), "/nubonosedetector");
 	}

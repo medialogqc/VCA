@@ -25,12 +25,13 @@ const I_AM_STARTING = 2;
 const I_CHANGE_CONF = 3;
 const I_APPLY_CONF = 4;
 
+
 window.onload = function() {
-	console.log("Page loaded ...");
-	console = new Console('console', console);
+	console = new Console();
+    	console.log("Page loaded ...");
 	videoInput = document.getElementById('videoInput');
 	videoOutput = document.getElementById('videoOutput');
-	setState(I_CAN_START);			
+	setState(I_CAN_START);
 }
 
 window.onbeforeunload = function() {
@@ -45,6 +46,14 @@ ws.onmessage = function(message) {
 	case 'startResponse':
 		startResponse(parsedMessage);
 		break;
+	
+	case 'iceCandidate':
+	    webRtcPeer.addIceCandidate(parsedMessage.candidate, function (error) {
+        if (!error) return;
+	      console.error("Error adding candidate: " + error);
+	    });
+	    break;
+
 	case 'error':
 		if (state == I_AM_STARTING) {
 			setState(I_CAN_START);
@@ -66,10 +75,23 @@ function start() {
 	showSpinner(videoInput, videoOutput);
 
 	console.log("Creating WebRtcPeer and generating local sdp offer ...");
-	webRtcPeer = kurentoUtils.WebRtcPeer.startSendRecv(videoInput, videoOutput, onOffer, onError);
+        var options = {
+	    localVideo: videoInput,
+	    remoteVideo: videoOutput,
+	    onicecandidate: onIceCandidate
+	}
+
+    webRtcPeer = new kurentoUtils.WebRtcPeer.WebRtcPeerSendrecv(options,
+								function (error) {
+								    if(error) {
+									return console.error(error);
+								    }
+								    webRtcPeer.generateOffer (onOffer);
+								});
 }
 
-function onOffer(offerSdp) {
+function onOffer(error,offerSdp) {
+    	if (error) return console.error ("Error generating the offer");
 	console.info('Invoking SDP offer callback function ' + location.host);
 	var message = {
 		id : 'start',
@@ -82,10 +104,23 @@ function onError(error) {
 	console.error(error);
 }
 
+
+function onIceCandidate(candidate) {
+	  console.log("Local candidate" + JSON.stringify(candidate));
+
+	  var message = {
+	    id: 'onIceCandidate',
+	    candidate: candidate
+	  };
+	  sendMessage(message);
+}
+
 function startResponse(message) {
 	setState(I_CAN_STOP);
 	console.log("SDP answer received from server. Processing ...");
-	webRtcPeer.processSdpAnswer(message.sdpAnswer);
+    	webRtcPeer.processAnswer (message.sdpAnswer, function (error) {
+		if (error) return console.error (error);
+	});
 }
 
 function stop() {
@@ -106,35 +141,23 @@ function stop() {
 function setState(nextState) {
 	switch (nextState) {
 	case I_CAN_START:
-		$('#start').attr('disabled', false);
+	    	$('#start').attr('disabled', false);
 		$('#stop').attr('disabled', true);
 		$('#apply_conf').attr('disabled', true);
 		break;
 
 	case I_CAN_STOP:
-		$('#start').attr('disabled', true);
-		$('#stop').attr('disabled', false);
-		$('#apply_conf').attr('disabled', false);
+	    $('#start').attr('disabled', true);
+	    $('#stop').attr('disabled', false);
+	    $('#apply_conf').attr('disabled', false);
 		break;
 
 	case I_AM_STARTING:
-		$('#start').attr('disabled', true);
-		$('#stop').attr('disabled', true);
-		$('#apply_conf').attr('disabled', true);
-		break;
-		
-	case I_CHANGE_CONF:
-		$('#apply_conf').attr('disabled', true);
-		nextState=state;
-		
-		break;
-		
-	case I_APPLY_CONF:
-		$('#apply_conf').attr('disabled', false);
-		nextState=state;
-		
-		break;
-		
+	    $('#start').attr('disabled', true);
+	    $('#stop').attr('disabled', true);
+	    $('#apply_conf').attr('disabled', true);	    
+	    break;
+
 	default:
 		onError("Unknown state " + nextState);
 		return;
@@ -164,6 +187,21 @@ function hideSpinner() {
 }
 
 
+function show_faces() {
+	var faces = 0;
+	if ( document.getElementById('show_faces').checked) {
+		faces=1;
+	}
+	
+	var message = {
+		id : 'show_faces',
+		val : faces
+	};
+	
+	sendMessage(message);
+	
+}
+
 function showValue(newValue,val_id)
 {
 	var message = {
@@ -186,6 +224,7 @@ function setVisualMode(mode)
 	
 	sendMessage(message);
 }
+
 /**
  * Lightbox utility (to display media pipeline image in a modal dialog)
  */

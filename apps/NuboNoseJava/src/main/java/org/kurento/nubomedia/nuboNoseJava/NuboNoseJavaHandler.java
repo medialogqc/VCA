@@ -16,9 +16,15 @@ package org.kurento.nubomedia.nuboNoseJava;
 
 import java.io.IOException;
 import java.util.concurrent.ConcurrentHashMap;
-import org.kurento.client.MediaPipeline;
-import org.kurento.client.WebRtcEndpoint;
+
+import org.kurento.client.EventListener;
+import org.kurento.client.IceCandidate;
 import org.kurento.client.KurentoClient;
+import org.kurento.client.MediaPipeline;
+import org.kurento.client.OnIceCandidateEvent;
+import org.kurento.client.WebRtcEndpoint;
+import org.kurento.jsonrpc.JsonUtils;
+import org.kurento.module.nubonosedetector.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,29 +32,27 @@ import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
-import org.kurento.module.nubonosedetector.*;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 
 /**
- * Magic Mirror handler (application and media logic).
+ * Chroma handler (application and media logic).
  * 
- * @author Victor Hidalgo (vmhidalgo@visual-tools.com)
- * @since 5.0.0
+ * @author Boni Garcia (bgarcia@gsyc.es)
+ * @author David Fernandez (d.fernandezlop@gmail.com)
+ * @since 6.0.0
  */
-
 public class NuboNoseJavaHandler extends TextWebSocketHandler {
 
-	private final Logger log = LoggerFactory
-			.getLogger(NuboNoseJavaHandler.class);
+	private final Logger log = LoggerFactory.getLogger(NuboNoseJavaHandler.class);
 	private static final Gson gson = new GsonBuilder().create();
 
-	private ConcurrentHashMap<String, MediaPipeline> pipelines = new ConcurrentHashMap<String, MediaPipeline>();
+	private final ConcurrentHashMap<String, UserSession> users = new ConcurrentHashMap<String, UserSession>();
 
 	@Autowired
 	private KurentoClient kurento;
-	
+
 	private NuboNoseDetector nose = null;
 	private int visualizeNose = -1;
 
@@ -64,16 +68,29 @@ public class NuboNoseJavaHandler extends TextWebSocketHandler {
 		case "start":
 			start(session, jsonMessage);
 			break;
-		case "show_noses":
+		case "show_noses":	
 			setVisualization(session,jsonMessage);
 			break;
-		case "stop":
-			String sessionId = session.getId();
-			if (pipelines.containsKey(sessionId)) {
-				pipelines.get(sessionId).release();
-				pipelines.remove(sessionId);
+		case "stop": {
+			UserSession user = users.remove(session.getId());
+			if (user != null) {
+				user.release();
 			}
 			break;
+		}
+		case "onIceCandidate": {
+			JsonObject candidate = jsonMessage.get("candidate")
+					.getAsJsonObject();
+
+			UserSession user = users.get(session.getId());
+			if (user != null) {
+				IceCandidate cand = new IceCandidate(candidate.get("candidate")
+						.getAsString(), candidate.get("sdpMid").getAsString(),
+						candidate.get("sdpMLineIndex").getAsInt());
+				user.addCandidate(cand);
+			}
+			break;
+		}
 
 		default:
 			sendError(session,
@@ -83,20 +100,42 @@ public class NuboNoseJavaHandler extends TextWebSocketHandler {
 		}
 	}
 
-	private void start(WebSocketSession session, JsonObject jsonMessage) {
+	private void start(final WebSocketSession session, JsonObject jsonMessage) {
 		try {
 			// Media Logic (Media Pipeline and Elements)
+			UserSession user = new UserSession();
 			MediaPipeline pipeline = kurento.createMediaPipeline();
-			pipelines.put(session.getId(), pipeline);
-
+			user.setMediaPipeline(pipeline);
 			WebRtcEndpoint webRtcEndpoint = new WebRtcEndpoint.Builder(pipeline)
 					.build();
-			
+			user.setWebRtcEndpoint(webRtcEndpoint);
+			users.put(session.getId(), user);
+
+			webRtcEndpoint
+					.addOnIceCandidateListener(new EventListener<OnIceCandidateEvent>() {
+
+						@Override
+						public void onEvent(OnIceCandidateEvent event) {
+							JsonObject response = new JsonObject();
+							response.addProperty("id", "iceCandidate");
+							response.add("candidate", JsonUtils
+									.toJsonObject(event.getCandidate()));
+							try {
+								synchronized (session) {
+									session.sendMessage(new TextMessage(
+											response.toString()));
+								}
+							} catch (IOException e) {
+								log.debug(e.getMessage());
+							}
+						}
+					});
+
 			nose = new NuboNoseDetector.Builder(pipeline).build();
-					
+
+			
 			webRtcEndpoint.connect(nose);
 			nose.connect(webRtcEndpoint);
-			
 
 			// SDP negotiation (offer and answer)
 			String sdpOffer = jsonMessage.get("sdpOffer").getAsString();
@@ -106,25 +145,30 @@ public class NuboNoseJavaHandler extends TextWebSocketHandler {
 			JsonObject response = new JsonObject();
 			response.addProperty("id", "startResponse");
 			response.addProperty("sdpAnswer", sdpAnswer);
-			session.sendMessage(new TextMessage(response.toString()));
+
+			synchronized (session) {
+				session.sendMessage(new TextMessage(response.toString()));
+			}
+			webRtcEndpoint.gatherCandidates();
+
 		} catch (Throwable t) {
 			sendError(session, t.getMessage());
 		}
 	}
-	
+
 	private void setVisualization(WebSocketSession session,JsonObject jsonObject)
-	{
-		
-		try{
-			visualizeNose = jsonObject.get("val").getAsInt();
-				
-			if (null != nose)
-				nose.showNoses(visualizeNose);
-			
-		} catch (Throwable t){
-			sendError(session,t.getMessage());
-		}
-	}
+        {
+
+               	try{
+                       	visualizeNose = jsonObject.get("val").getAsInt();
+                        if (null != nose)
+       	                        nose.showNoses(visualizeNose);
+
+               	} catch (Throwable t){
+                       	sendError(session,t.getMessage());
+                }
+        }
+
 	private void sendError(WebSocketSession session, String message) {
 		try {
 			JsonObject response = new JsonObject();

@@ -24,8 +24,8 @@ const I_CAN_STOP = 1;
 const I_AM_STARTING = 2;
 
 window.onload = function() {
-	console.log("Page loaded ...");
-	console = new Console('console', console);
+	console = new Console();
+    	console.log("Page loaded ...");
 	videoInput = document.getElementById('videoInput');
 	videoOutput = document.getElementById('videoOutput');
 	setState(I_CAN_START);
@@ -43,6 +43,14 @@ ws.onmessage = function(message) {
 	case 'startResponse':
 		startResponse(parsedMessage);
 		break;
+	
+	case 'iceCandidate':
+	    webRtcPeer.addIceCandidate(parsedMessage.candidate, function (error) {
+        if (!error) return;
+	      console.error("Error adding candidate: " + error);
+	    });
+	    break;
+
 	case 'error':
 		if (state == I_AM_STARTING) {
 			setState(I_CAN_START);
@@ -64,10 +72,23 @@ function start() {
 	showSpinner(videoInput, videoOutput);
 
 	console.log("Creating WebRtcPeer and generating local sdp offer ...");
-	webRtcPeer = kurentoUtils.WebRtcPeer.startSendRecv(videoInput, videoOutput, onOffer, onError);
+        var options = {
+	    localVideo: videoInput,
+	    remoteVideo: videoOutput,
+	    onicecandidate: onIceCandidate
+	}
+
+    webRtcPeer = new kurentoUtils.WebRtcPeer.WebRtcPeerSendrecv(options,
+								function (error) {
+								    if(error) {
+									return console.error(error);
+								    }
+								    webRtcPeer.generateOffer (onOffer);
+								});
 }
 
-function onOffer(offerSdp) {
+function onOffer(error,offerSdp) {
+    	if (error) return console.error ("Error generating the offer");
 	console.info('Invoking SDP offer callback function ' + location.host);
 	var message = {
 		id : 'start',
@@ -80,10 +101,23 @@ function onError(error) {
 	console.error(error);
 }
 
+
+function onIceCandidate(candidate) {
+	  console.log("Local candidate" + JSON.stringify(candidate));
+
+	  var message = {
+	    id: 'onIceCandidate',
+	    candidate: candidate
+	  };
+	  sendMessage(message);
+}
+
 function startResponse(message) {
 	setState(I_CAN_STOP);
 	console.log("SDP answer received from server. Processing ...");
-	webRtcPeer.processSdpAnswer(message.sdpAnswer);
+    	webRtcPeer.processAnswer (message.sdpAnswer, function (error) {
+		if (error) return console.error (error);
+	});
 }
 
 function stop() {

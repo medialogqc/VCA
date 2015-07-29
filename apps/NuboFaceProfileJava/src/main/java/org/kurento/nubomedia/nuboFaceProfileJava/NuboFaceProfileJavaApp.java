@@ -23,16 +23,23 @@ import org.springframework.web.socket.config.annotation.EnableWebSocket;
 import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
 import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry;
 
+/**
+ * Chroma main class.
+ * 
+ * @author Boni Garcia (bgarcia@gsyc.es)
+ * @author David Fernandez (d.fernandezlop@gmail.com)
+ * @since 5.0.0
+ */
 @Configuration
 @EnableWebSocket
 @EnableAutoConfiguration
 public class NuboFaceProfileJavaApp implements WebSocketConfigurer {
 
 	final static String DEFAULT_KMS_WS_URI = "ws://localhost:8888/kurento";
+	
 
 	@Bean
 	public NuboFaceProfileJavaHandler handler() {
-		System.out.println("Returning Handler");
 		return new NuboFaceProfileJavaHandler();
 	}
 
@@ -42,8 +49,9 @@ public class NuboFaceProfileJavaApp implements WebSocketConfigurer {
 				DEFAULT_KMS_WS_URI));
 	}
 
+	@Override
 	public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
-		registry.addHandler(handler(), "/nubofaceprofile");
+		registry.addHandler(handler(), "/nubofaceprofiledetector");
 	}
 
 	public static void main(String[] args) throws Exception {

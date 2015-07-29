@@ -14,7 +14,7 @@
  */
 package org.kurento.nubomedia.nuboEarJava;
 
-import org.kurento.client.factory.KurentoClient;
+import org.kurento.client.KurentoClient;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.context.annotation.Bean;
@@ -24,9 +24,10 @@ import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
 import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry;
 
 /**
- * Magic Mirror main class.
+ * Chroma main class.
  * 
  * @author Boni Garcia (bgarcia@gsyc.es)
+ * @author David Fernandez (d.fernandezlop@gmail.com)
  * @since 5.0.0
  */
 @Configuration
@@ -35,10 +36,10 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 public class NuboEarJavaApp implements WebSocketConfigurer {
 
 	final static String DEFAULT_KMS_WS_URI = "ws://localhost:8888/kurento";
+	
 
 	@Bean
 	public NuboEarJavaHandler handler() {
-		System.out.println("Returning Handler");
 		return new NuboEarJavaHandler();
 	}
 
@@ -48,8 +49,9 @@ public class NuboEarJavaApp implements WebSocketConfigurer {
 				DEFAULT_KMS_WS_URI));
 	}
 
+	@Override
 	public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
-		registry.addHandler(handler(), "/magicmirror");
+		registry.addHandler(handler(), "/nuboeardetector");
 	}
 
 	public static void main(String[] args) throws Exception {
