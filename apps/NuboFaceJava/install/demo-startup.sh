@@ -8,7 +8,7 @@ echo "Service [$APP_NAME] - [$1]"
 APP_HOME=/var/lib/kurento
 APP_NAME=nubo-face-detector
 APP_JAR=NuboFaceJava
-APP_VERSION=5.1.0-SNAPSHOT
+APP_VERSION=6.0.0
 APP=$APP_NAME-$APP_VERSION
 APP_PORT=8100
 CONSOLE_LOG=/var/log/kurento-media-server/$APP_NAME.log
@@ -40,6 +40,7 @@ echo "========================================================================="
 echo ""
 
 function start {
+    sleep 10
     if pkill -0 -f $APP_JAR.jar > /dev/null 2>&1
     then
         echo "Service [$APP_NAME] is already running. Ignoring startup request."

@@ -40,6 +40,7 @@ echo "========================================================================="
 echo ""
 
 function start {
+    sleep 10
     if pkill -0 -f $APP_JAR.jar > /dev/null 2>&1
     then
         echo "Service [$APP_NAME] is already running. Ignoring startup request."

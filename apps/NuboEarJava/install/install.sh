@@ -18,7 +18,7 @@ mkdir -p /var/lib/kurento
 install -o root -g root $APP_HOME/$APP_JAR.jar /var/lib/kurento/
 
 # enable demo at startup
-# update-rc.d $APP_NAME defaults
+update-rc.d $APP_NAME defaults 99
 
 # start demo
 /etc/init.d/$APP_NAME restart
