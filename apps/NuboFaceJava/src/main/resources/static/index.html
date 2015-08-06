@@ -49,6 +49,7 @@
       </div>
 
     </header>
+
     <div class="container">
       
       <div class="page-header">
@@ -66,36 +67,101 @@
 	  <li>Click on <i>Stop</i> to finish the communication.
 	  </li>
 	</ol>
+	
+	<div class="row" >
+	  <br>
+	  About the configuration:
+	  <ul>
+	    <li><b>Fps:</b>With this paramteter we indicate the number of framres pers seconds.The more fps, the detection will be more robust but the computation will be woerse </li>
+	    <li><b>Size To Process</b>With this paramteter we indicate the size of the image used to detect faces. Higher size, the detection will be more robust, but the computation time will be worse </li>
+	    <li><b>Scale Factor</b>The algorithm uses different images to detect faces. The following image to the original are gradually reducing its size. With this parameter we indicate such reduction between images. The smaller the reduction, the stronger the detection but the computation time will be worse </li>
+	    <li><b>Show faces</b>If you check the checkbox and you can see the faces detected on the remote stream</li>				
+	  </ul>
+	</div>
+	
       </div>
       
-      
-      
-      <div class="row" style="margin-left:400px"  >
-	<input id="show_faces" type="checkbox"  required name="terms" onchange="show_faces()"> Show detected Faces 
-	<br/> <br/>
-	<a id="start" href="#" class="btn btn-success"
-	   onclick="start(); return false;">
-	  <span class="glyphicon glyphicon-play"></span> Start</a>
-	&nbsp &nbsp
-	<a
-	   id="stop" href="#" class="btn btn-danger"
-	   onclick="stop(); return false;">
-	  <span class="glyphicon glyphicon-stop"></span> Stop</a>
-	
-      </div >
+      <div class="row" >			
+	<div class="col-md-5" style=" width:500px;  border: 2px solid;">
+	  <h4 style="text-align:center">Configuration</h4>																		
+	  <table  style="margin: 20px 10px 20px 10px">
+	    <tr>
+	      <td align="left" width="300px"> <span >Fps</span> </td>
+	      <td align="left" width="200px">
+		<select id="select_fps" style="width:65px" onchange="set_fps(this.value)">
+		  <option value="1"> 8 fps </option>
+		  <option value="2"> 12 fps </option>
+		  <option value="3"> 18 fps </option>
+		  <option selected="selected" value="4"> 24 fps </option>
+		</select>
+	      </td>
+	      <td align="left" width="300px"> <span >Size To process</span> </td>
+	      <td align="left" width="200px">
+		<select id="select_size" style="width:80px " onchange="set_size(this.value)">
+		  <option value="640"> 640x480 </option>
+		  <option selected="selected" value="320"> 320x240 </option>
+		  <option value="160"> 160x120 </option>
+		  <option value="80"> 80x160 </option>
+		</select>
+	      </td>
+	    </tr>
+	    <tr> <td height="5px"></td></tr>
+	    <tr>
+	      <td align="left" width="300px"> <span >Scale Factor</span> </td>
+	      <td align="left" width="200px">
+		<select id="scale_factor" style="width:65px" onchange="set_scale(this.value)">
+		  <option value="5"> 5% </option>
+		  <option value="10"> 10% </option>
+		  <option value="15"> 15% </option>
+		  <option value="20"> 20% </option>
+		  <option selected="selected" value="25"> 25% </option>
+		  <option value="30"> 30% </option>
+		  <option value="35"> 35% </option>
+		  <option value="40"> 40% </option>		  
+		  <option value="45"> 45% </option>
+		  <option value="50"> 50% </option>				  
+		</select>
+	      </td>
+	      <td align="left" width="300px"> <span >Show  faces</span> </td>
+	      <td align="left" width="200px">
+		<input id="show_faces" type="checkbox"  required name="terms" onchange="show_faces()"> 
+	      </td>	      
+	    </tr>
+	    
+	  </table>
+	</div>
+
+	<div class="col-md-5"  style=" width:500px;   align:center" >
+	  <table>
+	    <tr> <td height="50px"></td></tr>
+	    <tr> <td width="425px" vertical-align="center" align="center">
+		
+		<a id="start" href="#" class="btn btn-success"
+		   onclick="start(); return false;">
+		  <span class="glyphicon glyphicon-play"></span> Start</a>
+		
+		<a id="stop" href="#" class="btn btn-danger"
+		   onclick="stop(); return false;"><span
+						      class="glyphicon glyphicon-stop"></span> Stop</a>
+	    </td> </tr> 
+	  </table>
+	</div>
+
+      </div>
       
       <div class="row" align="center">
 	<div class="col-md-5">
 	  <h3>Local stream</h3>
 	  <video id="videoInput" autoplay width="480px" height="360px"
-		 poster="img/webrtc.png"></video>
+		 poster="./img/webrtc.png"></video>
 	</div>
 	<div class="col-md-5">
 	  <h3>Remote stream</h3>
 	  <video id="videoOutput" autoplay width="480px" height="360px"
-		 poster="img/webrtc.png"></video>
+		 poster="./img/webrtc.png"></video>
 	</div>
       </div>
+      
 
       <div class="row">
 	<div class="col-md-12">

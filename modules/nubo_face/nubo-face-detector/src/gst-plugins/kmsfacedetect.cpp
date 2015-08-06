@@ -8,12 +8,18 @@
 #include <unistd.h>
 #include <iostream>
 #include <opencv2/opencv.hpp>
-
+#include <sys/time.h>
 
 #define PLUGIN_NAME "nubofacedetector"
-#define MAX_WIDTH 160
+#define MAX_WIDTH 320
 #define DEFAULT_FILTER_TYPE (KmsFaceDetectType)0
 #define NUM_FRAMES_TO_PROCESS 10
+#define PROCESS_ALL_FRAMES 4
+#define DEFAULT_SCALE_FACTOR 25
+#define DEFAULT_WIDTH 320
+#define DEFAULT_HEIGHT 240
+#define GOP 4
+#define MOTION_EVENT "motion"
 
 #define HAAR_CONF_FILE "/usr/share/opencv/haarcascades/haarcascade_frontalface_alt.xml"
 
@@ -25,9 +31,7 @@ using namespace cv;
 #define KMS_FACE_DETECT_UNLOCK(face_detect)				\
   (g_rec_mutex_unlock (&( (KmsFaceDetect *) face_detect)->priv->mutex))
 
-#define DEFAULT_WIDTH 320
-#define DEFAULT_HEIGHT 240
-#define MOTION_EVENT "motion"
+
 
 GST_DEBUG_CATEGORY_STATIC (kms_face_detect_debug_category);
 #define GST_CAT_DEFAULT kms_face_detect_debug_category
@@ -44,6 +48,9 @@ enum {
   PROP_VIEW_FACES,
   PROP_DETECT_BY_EVENT,
   PROP_SEND_META_DATA,
+  PROP_MULTI_SCALE_FACTOR,
+  PROP_WIDTH_TO_PROCCESS,
+  PROP_PROCESS_X_EVERY_4_FRAMES,
   PROP_SHOW_DEBUG_INFO
 };
 
@@ -57,11 +64,15 @@ struct _KmsFaceDetectPrivate {
   vector<Rect> *faces_detected;
   int img_width;
   int img_height;
+  int width_to_process; 
   float scale;
   int show_faces; // to draw a rectangle over the face
   int detect_event;  
   int meta_data;
   int num_frames_to_process;
+  int scale_factor;
+  int process_x_every_4_frames;
+  int num_frame;
   CascadeClassifier *cascade;
   GstClockTime dts,pts;
   GQueue *events_queue;
@@ -90,8 +101,10 @@ G_DEFINE_TYPE_WITH_CODE (KmsFaceDetect, kms_face_detect,
                          GST_TYPE_VIDEO_FILTER,
                          GST_DEBUG_CATEGORY_INIT (kms_face_detect_debug_category,
 						  PLUGIN_NAME, 0,
-
 						  "debug category for sample_filter element") );
+
+#define MULTI_SCALE_FACTOR(scale) (1 + scale*1.0/100)
+
 static CascadeClassifier cascade;
 
 static int
@@ -167,8 +180,8 @@ static gboolean kms_face_detect_sink_events(GstBaseTransform * trans, GstEvent *
   default:
     break;
   }
-  ret = gst_pad_push_event (trans->srcpad, event);
-
+  //ret = gst_pad_push_event (trans->srcpad, event);
+  ret=  gst_pad_event_default (trans->sinkpad, GST_OBJECT (trans), event);
 
   return ret;
 }
@@ -195,10 +208,8 @@ kms_face_detect_conf_images (KmsFaceDetect *face_detect,
     face_detect->priv->img_orig= cvCreateImageHeader(cvSize(frame->info.width,
 							    frame->info.height),
 						     IPL_DEPTH_8U, 3);
-  if ( frame->info.width > MAX_WIDTH )
-    face_detect->priv->scale = frame->info.width / MAX_WIDTH;
-  else
-    face_detect->priv->scale=1;
+
+  face_detect->priv->scale = frame->info.width / face_detect->priv->width_to_process;
 
   face_detect->priv->img_orig->imageData = (char *) info.data;
 }
@@ -212,28 +223,70 @@ kms_face_detect_set_property (GObject *object, guint property_id,
   //Changing values of the properties is a critical region because read/write
   //concurrently could produce race condition. For this reason, the following
   //code is protected with a mutex
+  FILE*f;
+  char buffer[256];
+  memset (buffer,0,256);
+  f=fopen("/tmp/properties.txt","a+");
+  sprintf(buffer,"n\n\n********************Changing properties************************ \n");
+  fwrite(buffer,sizeof(char),sizeof(buffer),f);
+
   KMS_FACE_DETECT_LOCK (face_detect);
 
+  
   switch (property_id) {
   case PROP_VIEW_FACES:
     face_detect->priv->show_faces =  g_value_get_int (value);
+    memset (buffer,0,256);
+    sprintf(buffer,"Change property show faces \n");
+    fwrite(buffer,sizeof(char),sizeof(buffer),f);
     break;
 
   case PROP_DETECT_BY_EVENT:
     face_detect->priv->detect_event =  g_value_get_int(value);
+    memset (buffer,0,256);
+    sprintf(buffer,"Change property detect event %d \n",face_detect->priv->detect_event);
+    fwrite(buffer,sizeof(char),sizeof(buffer),f);
+
     break;
 
   case PROP_SEND_META_DATA:
     face_detect->priv->meta_data =  g_value_get_int(value);
+    memset (buffer,0,256);
+    sprintf(buffer,"Change property send meta data %d \n",face_detect->priv->meta_data);
+    fwrite(buffer,sizeof(char),sizeof(buffer),f);
     break;
 
+  case PROP_PROCESS_X_EVERY_4_FRAMES:
+    face_detect->priv->process_x_every_4_frames = g_value_get_int(value);
+    memset (buffer,0,256);
+    sprintf(buffer,"Change property proccess every x frames  %d \n",face_detect->priv->process_x_every_4_frames);
+    fwrite(buffer,sizeof(char),sizeof(buffer),f);
+    break;
+    
+  case PROP_WIDTH_TO_PROCCESS:
+    face_detect->priv->width_to_process = g_value_get_int(value);
+    memset (buffer,0,256);
+    sprintf(buffer,"Change property width to process %d \n",face_detect->priv->width_to_process);
+    fwrite(buffer,sizeof(char),sizeof(buffer),f);
+    break;
+    
+    case PROP_MULTI_SCALE_FACTOR:
+    face_detect->priv->scale_factor = g_value_get_int(value);
+    memset (buffer,0,256);
+    sprintf(buffer,"Change property multi scale factor %d \n",face_detect->priv->scale_factor);
+    fwrite(buffer,sizeof(char),sizeof(buffer),f);
+    break;
+    
   default:
     G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
     break;
   }
 
   KMS_FACE_DETECT_UNLOCK (face_detect);
-  
+  memset (buffer,0,256);
+  sprintf(buffer,"******************************************** \n\n\n");
+  fwrite(buffer,sizeof(char),sizeof(buffer),f);
+  fclose(f);
 }
 
 static void
@@ -260,6 +313,18 @@ kms_face_detect_get_property (GObject *object, guint property_id,
 
   case PROP_SEND_META_DATA:
     g_value_set_int(value,face_detect->priv->meta_data);
+    break;
+    
+  case PROP_PROCESS_X_EVERY_4_FRAMES:
+    g_value_set_int(value,face_detect->priv->process_x_every_4_frames);
+    break;
+
+  case PROP_MULTI_SCALE_FACTOR:
+    g_value_set_int(value,face_detect->priv->scale_factor);
+    break;
+
+  case PROP_WIDTH_TO_PROCCESS:
+    g_value_set_int(value,face_detect->priv->width_to_process);
     break;
 
   default:
@@ -309,7 +374,8 @@ static bool __get_message(GstStructure *message)
       continue;
     }
 
-    if (0 == g_strcmp0 (name, MOTION_EVENT))
+
+    if (0 == g_strcmp0 (name, MOTION_EVENT)) 
       {
 	ret = gst_structure_get (message, name, GST_TYPE_STRUCTURE, &data, NULL);
 
@@ -332,11 +398,11 @@ static bool __process_alg(KmsFaceDetect *face_detect, GstClockTime f_pts)
   bool res=false;
   gboolean ret = false;
   //if detect_event is false it does not matter the event received
-  if (0==face_detect->priv->detect_event) return true;
 
+  if (0==face_detect->priv->detect_event) return true;
   if (g_queue_get_length(face_detect->priv->events_queue) == 0) 
     return false;
-	
+
   message= (GstStructure *) g_queue_pop_head(face_detect->priv->events_queue);
 
   if (NULL != message)
@@ -346,7 +412,6 @@ static bool __process_alg(KmsFaceDetect *face_detect, GstClockTime f_pts)
       //if ( ret && face_detect->priv->pts == f_pts)
       if ( ret )
 	{
-
 	  res = __get_message(message);	  
 	}
 
@@ -383,22 +448,31 @@ kms_face_detect_process_frame(KmsFaceDetect *face_detect,int width,int height,do
   if ( ! __process_alg(face_detect,pts) && face_detect->priv->num_frames_to_process <= 0 )
     return;
 
-  face_detect->priv->num_frames_to_process --;
-
-  cv::resize( img,aux_img,  aux_img.size(), 0, 0, INTER_LINEAR );
-  cvtColor( aux_img, img_gray, CV_BGR2GRAY );
-  equalizeHist( img_gray, img_gray );
-
-
-  faces->clear();
-  cascade.detectMultiScale(img_gray,*faces,1.2,3,0,
-			   Size(img_gray.cols/20,img_gray.rows/20 ),
-			   Size(img_gray.cols/2,img_gray.rows/2 ));
-
-	
+  face_detect->priv->num_frame++;
+  
+  if ( (2 == face_detect->priv->process_x_every_4_frames &&
+	(1 == face_detect->priv->num_frame % 2)) ||  
+       ( (2 != face_detect->priv->process_x_every_4_frames) &&
+	 (face_detect->priv->num_frame <= face_detect->priv->process_x_every_4_frames)))    
+    {
+      face_detect->priv->num_frames_to_process --;
+      
+      cv::resize( img,aux_img,  aux_img.size(), 0, 0, INTER_LINEAR );
+      cvtColor( aux_img, img_gray, CV_BGR2GRAY );
+      equalizeHist( img_gray, img_gray );
+      
+      faces->clear();
+      cascade.detectMultiScale(img_gray,*faces,
+			       MULTI_SCALE_FACTOR(face_detect->priv->scale_factor),
+			       3,0,Size(img_gray.cols/20,img_gray.rows/20 ));
+    }
+  
+  if (GOP == face_detect->priv->num_frame )
+    face_detect->priv->num_frame=0;
+  
   for( vector<Rect>::const_iterator r = faces->begin(); r != faces->end(); r++,i++ )
     {
-
+      
       color = colors[i%8];
       if (face_detect->priv->show_faces > 0)
 	cvRectangle( face_detect->priv->img_orig, cvPoint(cvRound(r->x*scale), 
@@ -407,9 +481,8 @@ kms_face_detect_process_frame(KmsFaceDetect *face_detect,int width,int height,do
 			     cvRound((r->y + r->height-1)*scale)),
 		     color, 3, 8, 0);
     }
-
+  
 }
-
 /**
  * This function contains the image processing.
  */
@@ -422,8 +495,10 @@ kms_face_detect_transform_frame_ip (GstVideoFilter *filter,
   double scale=0.0;
   int width=0,height=0;
 
-  gst_buffer_map (frame->buffer, &info, GST_MAP_READ);
-	
+  struct timeval proc_start,proc_end;
+  gettimeofday(&proc_start,NULL);
+  
+  gst_buffer_map (frame->buffer, &info, GST_MAP_READ);	
   // setting up images
   kms_face_detect_conf_images (face_detect, frame, info);
 
@@ -441,6 +516,12 @@ kms_face_detect_transform_frame_ip (GstVideoFilter *filter,
 		
   gst_buffer_unmap (frame->buffer, &info);
 
+  gettimeofday(&proc_end,NULL);
+  long long ts_start = proc_start.tv_sec*1000 + ((proc_start.tv_usec*1.0)/1000.0);
+  long long end_start= proc_end.tv_sec*1000 + ((proc_end.tv_usec*1.0)/1000.0);
+  long long total = end_start - ts_start;  
+  printf("Iteration total time  %lld \n",total);
+
   return GST_FLOW_OK;
 }
 
@@ -448,7 +529,8 @@ kms_face_detect_transform_frame_ip (GstVideoFilter *filter,
  * In dispose(), you are supposed to free all types referenced from this
  * object which might themselves hold a reference to self. Generally,
  * the most simple solution is to unref all members on which you own a
- * reference.
+ * reference.com
+
  * dispose() might be called multiple times, so we must guard against
  * calling g_object_unref() on an invalid GObject by setting the member
  * NULL; g_clear_object() does this for us, atomically.
@@ -502,10 +584,15 @@ kms_face_detect_init (KmsFaceDetect *
   face_detect->priv->faces_detected= new vector<Rect>;
   face_detect->priv->num_frames_to_process=0;
 
+  face_detect->priv->process_x_every_4_frames=PROCESS_ALL_FRAMES;
+  face_detect->priv->num_frame=0;
+  face_detect->priv->width_to_process=MAX_WIDTH;
+  face_detect->priv->scale_factor=DEFAULT_SCALE_FACTOR;
+
   face_detect->priv->cv_mem_storage=cvCreateMemStorage(0);
   face_detect->priv->face_seq =cvCreateSeq (0, sizeof (CvSeq), sizeof (CvRect),
 					    face_detect->priv->cv_mem_storage);
-  face_detect->priv->show_faces = 0;
+  face_detect->priv->show_faces = 1;
 
   if (cascade.empty())
     if (kms_face_detect_init_cascade() < 0)
@@ -564,6 +651,23 @@ kms_face_detect_class_init (KmsFaceDetectClass *face)
 						     "0 (default) => it will not send meta data; 1 => it will send the bounding box of the face as metadata", 
 						     0,1,FALSE, (GParamFlags) G_PARAM_READWRITE));
 
+g_object_class_install_property (gobject_class, PROP_WIDTH_TO_PROCCESS,
+				   g_param_spec_int ("width-to-process", "width to process",
+						     "160,320 (default),480,640 => this will be the width of the image that the algorithm is going to process to detect faces", 
+						     0,640,FALSE, (GParamFlags) G_PARAM_READWRITE));
+
+ g_object_class_install_property (gobject_class,   PROP_PROCESS_X_EVERY_4_FRAMES,
+				  g_param_spec_int ("process-x-every-4-frames", "process x every 4 frames",
+						    "1,2,3,4 (default) => process x frames every 4 frames", 
+						    0,4,FALSE, (GParamFlags) G_PARAM_READWRITE));
+ 
+
+ g_object_class_install_property (gobject_class,   PROP_MULTI_SCALE_FACTOR,
+				  g_param_spec_int ("multi-scale-factor", "multi scale factor",
+						    "5-50  (25 default) => specifying how much the image size is reduced at each image scale.", 
+						    0,51,FALSE, (GParamFlags) G_PARAM_READWRITE));
+
+
   video_filter_class->transform_frame_ip =
     GST_DEBUG_FUNCPTR (kms_face_detect_transform_frame_ip);
 
@@ -573,7 +677,7 @@ kms_face_detect_class_init (KmsFaceDetectClass *face)
   face->base_face_detect_class.parent_class.sink_event =
     GST_DEBUG_FUNCPTR(kms_face_detect_sink_events);
 
-
+  
 }
 
 gboolean

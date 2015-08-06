@@ -15,6 +15,10 @@ GST_DEBUG_CATEGORY_STATIC (GST_CAT_DEFAULT);
 #define VIEW_FACES "view-faces"
 #define DETECT_BY_EVENT "detect-event"
 #define SEND_META_DATA "send-meta-data"
+#define FACTOR_SCALE "multi-scale-factor"
+#define X_EVERY_4_FRAMES "process-x-every-4-frames"
+#define WIDTH_TO_PROCESS "width-to-process"
+
 
 namespace kurento
 {
@@ -41,19 +45,39 @@ namespace kurento
 
       void NuboFaceDetectorImpl::showFaces(int viewFaces)
       {
+	printf("NuboFaceDetectorImpl.cpp receive viewFaces \n");
 	g_object_set(G_OBJECT (nubo_face), VIEW_FACES, viewFaces, NULL);
       }
 
       void NuboFaceDetectorImpl::detectByEvent(int event)
       {
-  
+	printf("NuboFaceDetectorImpl.cpp receive detectByEvent \n");
 	g_object_set(G_OBJECT (nubo_face), DETECT_BY_EVENT, event, NULL);
   
       }
   
       void NuboFaceDetectorImpl::sendMetaData(int metaData)
       {
+	printf("NuboFaceDetectorImpl.cpp receive send meta data \n");
 	g_object_set(G_OBJECT (nubo_face),SEND_META_DATA , metaData, NULL);
+      }
+
+      void NuboFaceDetectorImpl::multiScaleFactor(int scaleFactor)
+      {
+	printf("NuboFaceDetectorImpl.cpp receive scale Factor %d \n",scaleFactor);
+	g_object_set(G_OBJECT (nubo_face),FACTOR_SCALE , scaleFactor, NULL);
+      }
+
+      void NuboFaceDetectorImpl::processXevery4Frames(int xper4)
+      {
+	printf("NuboFaceDetectorImpl.cpp receive fps  %d \n",xper4);
+	g_object_set(G_OBJECT (nubo_face),X_EVERY_4_FRAMES , xper4, NULL);
+      }
+
+      void NuboFaceDetectorImpl::widthToProcess(int width)
+      {
+	printf("NuboFaceDetectorImpl.cpp width  %d \n",width);
+	g_object_set(G_OBJECT (nubo_face),WIDTH_TO_PROCESS , width, NULL);
       }
 
       MediaObjectImpl *
