@@ -15,6 +15,9 @@ GST_DEBUG_CATEGORY_STATIC (GST_CAT_DEFAULT);
 #define VIEW_MOUTHS "view-mouths"
 #define DETECT_BY_EVENT "detect-event"
 #define SEND_META_DATA "send-meta-data"
+#define FACTOR_SCALE "multi-scale-factor"
+#define X_EVERY_4_FRAMES "process-x-every-4-frames"
+#define WIDTH_TO_PROCESS "width-to-process"
 
 namespace kurento
 {
@@ -56,6 +59,24 @@ namespace kurento
 	g_object_set(G_OBJECT (nubo_mouth),SEND_META_DATA , metaData, NULL);
       }
 
+      void NuboMouthDetectorImpl::multiScaleFactor(int scaleFactor)
+      {
+	printf("NuboMouthDetectorImpl.cpp receive scale Factor %d \n",scaleFactor);
+	g_object_set(G_OBJECT (nubo_mouth),FACTOR_SCALE , scaleFactor, NULL);
+      }
+
+      void NuboMouthDetectorImpl::processXevery4Frames(int xper4)
+      {
+	printf("NuboMouthDetectorImpl.cpp receive fps  %d \n",xper4);
+	g_object_set(G_OBJECT (nubo_mouth),X_EVERY_4_FRAMES , xper4, NULL);
+      }
+
+      void NuboMouthDetectorImpl::widthToProcess(int width)
+      {
+	std::cout << "******************************************" << std::endl;
+	std::cout << "NuboMouthDetectorImpl.cpp width " << width << std::endl; 
+	g_object_set(G_OBJECT (nubo_mouth),WIDTH_TO_PROCESS , width, NULL);
+      }
       MediaObjectImpl *
       NuboMouthDetectorImplFactory::createObject (const boost::property_tree::ptree &config, std::shared_ptr<MediaPipeline> mediaPipeline) const
       {

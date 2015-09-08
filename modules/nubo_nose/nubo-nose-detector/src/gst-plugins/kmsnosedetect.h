@@ -1,4 +1,3 @@
-
 #ifndef _KMS_NOSE_DETECT_H_
 #define _KMS_NOSE_DETECT_H_
 
@@ -15,11 +14,11 @@ typedef struct _KmsNoseDetectClass KmsNoseDetectClass;
 typedef struct _KmsNoseDetectPrivate KmsNoseDetectPrivate;
 
 typedef enum
-{
-  KMS_NOSE_DETECT_TYPE_EDGES,
-  KMS_NOSE_DETECT_TYPE_GREY,
-}
-KmsNoseDetectType;
+  {
+    KMS_NOSE_DETECT_TYPE_EDGES,
+    KMS_NOSE_DETECT_TYPE_GREY,
+  }
+  KmsNoseDetectType;
 
 struct _KmsNoseDetect
 {
@@ -37,4 +36,4 @@ GType kms_nose_detect_get_type (void);
 gboolean kms_nose_detect_plugin_init (GstPlugin * plugin);
 
 G_END_DECLS
-#endif /* _KMS_face_detect_H_ */
+#endif /* _KMS_nose_detect_H_ */

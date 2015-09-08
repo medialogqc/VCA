@@ -147,7 +147,8 @@ static gboolean kms_eye_detect_sink_events(GstBaseTransform * trans, GstEvent * 
   default:
     break;
   }
-  ret = gst_pad_push_event (trans->srcpad, event);
+  //ret = gst_pad_push_event (trans->srcpad, event);
+  ret=  gst_pad_event_default (trans->sinkpad, GST_OBJECT (trans), event);
 
   return ret;
 }

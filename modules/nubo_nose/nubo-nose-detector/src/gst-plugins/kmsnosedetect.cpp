@@ -5,7 +5,11 @@
 #include <gst/video/video.h>
 #include <gst/video/gstvideofilter.h>
 #include <glib/gstdio.h>
+#include <string>
+#include <unistd.h>
+#include <iostream>
 #include <opencv2/opencv.hpp>
+#include <sys/time.h>
 
 
 #define PLUGIN_NAME "nubonosedetector"
@@ -22,6 +26,8 @@
 #define DOWN_PERCENTAGE 10
 #define SIDE_PERCENTAGE 25
 #define NUM_FRAMES_TO_PROCESS 10
+#define PROCESS_ALL_FRAMES 4
+#define DEFAULT_SCALE_FACTOR 25
 #define FACE_TYPE "face"
 
 using namespace cv;
@@ -47,7 +53,11 @@ enum {
   PROP_0,
   PROP_VIEW_NOSES,
   PROP_DETECT_BY_EVENT,
-  PROP_SEND_META_DATA
+  PROP_SEND_META_DATA,
+  PROP_MULTI_SCALE_FACTOR,
+  PROP_WIDTH_TO_PROCCESS,
+  PROP_PROCESS_X_EVERY_4_FRAMES,
+  PROP_SHOW_DEBUG_INFO
 };
 
 struct _KmsNoseDetectPrivate {
@@ -58,6 +68,7 @@ struct _KmsNoseDetectPrivate {
   float scale_n2o;//nose 2 origin 
   int img_width;
   int img_height;
+  int width_to_process; 
   int view_noses;
   GRecMutex mutex;
   gboolean debug;
@@ -66,6 +77,9 @@ struct _KmsNoseDetectPrivate {
   int num_frames_to_process;
   int detect_event;
   int meta_data;
+  int scale_factor;
+  int process_x_every_4_frames;
+  int num_frame;
   vector<Rect> *faces;
   vector<Rect> *noses;
   /*detect event*/
@@ -138,7 +152,8 @@ static gboolean kms_nose_detect_sink_events(GstBaseTransform * trans, GstEvent *
   default:
     break;
   }
-  ret = gst_pad_push_event (trans->srcpad, event);
+
+  ret=  gst_pad_event_default (trans->sinkpad, GST_OBJECT (trans), event);
 
   return ret;
 }
@@ -250,6 +265,18 @@ kms_nose_detect_set_property (GObject *object, guint property_id,
   case PROP_SEND_META_DATA:
     nose_detect->priv->meta_data =  g_value_get_int(value);
     break;
+    
+  case PROP_PROCESS_X_EVERY_4_FRAMES:
+    nose_detect->priv->process_x_every_4_frames = g_value_get_int(value);    
+    break;
+    
+  case PROP_WIDTH_TO_PROCCESS:
+    nose_detect->priv->width_to_process = g_value_get_int(value);
+    break;
+    
+    case PROP_MULTI_SCALE_FACTOR:
+    nose_detect->priv->scale_factor = g_value_get_int(value);
+    break;
 
   default:
     G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
@@ -283,6 +310,18 @@ kms_nose_detect_get_property (GObject *object, guint property_id,
     
   case PROP_SEND_META_DATA:
     g_value_set_int(value,nose_detect->priv->meta_data);
+    break;
+
+  case PROP_PROCESS_X_EVERY_4_FRAMES:
+    g_value_set_int(value,nose_detect->priv->process_x_every_4_frames);
+    break;
+    
+  case PROP_WIDTH_TO_PROCCESS:
+    g_value_set_int(value,nose_detect->priv->width_to_process);
+    break;
+    
+  case PROP_MULTI_SCALE_FACTOR:
+    g_value_set_int(value,nose_detect->priv->scale_factor);    
     break;
 
   default:
@@ -488,11 +527,12 @@ static GstFlowReturn
 kms_nose_detect_transform_frame_ip (GstVideoFilter *filter,
 				    GstVideoFrame *frame)
 {
+  printf("In transform frame ip \n");
   KmsNoseDetect *nose_detect = KMS_NOSE_DETECT (filter);
   GstMapInfo info;
   double scale_o2f=0.0,scale_n2o=0.0,scale_f2n=0.0;
   int width=0,height=0;
-
+  
   gst_buffer_map (frame->buffer, &info, GST_MAP_READ);
   // setting up images
   kms_nose_detect_conf_images (nose_detect, frame, info);
@@ -576,6 +616,11 @@ kms_nose_detect_init (KmsNoseDetect *
   nose_detect->priv->noses= new vector<Rect>;
   nose_detect->priv->num_frames_to_process=0;
 
+  nose_detect->priv->process_x_every_4_frames=PROCESS_ALL_FRAMES;
+  nose_detect->priv->num_frame=0;
+  nose_detect->priv->width_to_process=NOSE_WIDTH;
+  nose_detect->priv->scale_factor=DEFAULT_SCALE_FACTOR;
+
   if (fcascade.empty())
     if (kms_nose_detect_init_cascade() < 0)
       std::cout << "Error: init cascade" << std::endl;
@@ -632,7 +677,23 @@ kms_nose_detect_class_init (KmsNoseDetectClass *nose)
 						     "0 (default) => it will not send meta data; 1 => it will send the bounding box of the nose and face", 
 						     0,1,FALSE, (GParamFlags) G_PARAM_READWRITE));
 
+g_object_class_install_property (gobject_class, PROP_WIDTH_TO_PROCCESS,
+				   g_param_spec_int ("width-to-process", "width to process",
+						     "160,320 (default),480,640 => this will be the width of the image that the algorithm is going to process to detect mouths", 
+						     0,640,FALSE, (GParamFlags) G_PARAM_READWRITE));
+
+ g_object_class_install_property (gobject_class,   PROP_PROCESS_X_EVERY_4_FRAMES,
+				  g_param_spec_int ("process-x-every-4-frames", "process x every 4 frames",
+						    "1,2,3,4 (default) => process x frames every 4 frames", 
+						    0,4,FALSE, (GParamFlags) G_PARAM_READWRITE));
+ 
+
+ g_object_class_install_property (gobject_class,   PROP_MULTI_SCALE_FACTOR,
+				  g_param_spec_int ("multi-scale-factor", "multi scale factor",
+						    "5-50  (25 default) => specifying how much the image size is reduced at each image scale.", 
+						    0,51,FALSE, (GParamFlags) G_PARAM_READWRITE));
 	  
+
   video_filter_class->transform_frame_ip =
     GST_DEBUG_FUNCPTR (kms_nose_detect_transform_frame_ip);
 

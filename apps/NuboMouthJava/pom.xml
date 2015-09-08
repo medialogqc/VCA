@@ -42,7 +42,7 @@
 		</developer>
 	</developers>
 
-	<properties>
+	<properties>		
 		<!-- Main class -->
 		<start-class>org.kurento.nubomedia.nuboMouthJava.NuboMouthJavaApp</start-class>
 
@@ -70,7 +70,7 @@
 		<dependency>
 			<groupId>org.kurento.module</groupId>
 			<artifactId>nubomouthdetector</artifactId>
-			<version>0.0.2-SNAPSHOT</version>
+			<version>0.0.4-SNAPSHOT</version>
 		</dependency>
 	</dependencies>
 

@@ -15,6 +15,6 @@ init (GstPlugin * plugin)
 
 GST_PLUGIN_DEFINE (GST_VERSION_MAJOR,
     GST_VERSION_MINOR,
-    nosefilter,
+    nubonosedetector,
     "Kurento nose detector filter",
     init, VERSION, "LGPL", "Kurento", "http://kurento.com/")

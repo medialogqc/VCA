@@ -1,37 +1,3 @@
-/*
- * The MIT License (MIT)
- *
- * Copyright (c) 2014 Kurento (http://kurento.org/)
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * cop ies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
- * THE SOFTWARE.
- */
-
-/*
- * Example pipelines. The command has to be launched from the source directory.
- * (with a webcam)
- * gst-launch-1.0 --gst-plugin-path=. v4l2src ! videoconvert !
- *                              samplefilter type=1 ! videoconvert ! autovideosink
- * (with a video)
- * gst-launch-1.0 --gst-plugin-path=. uridecodebin uri=<video_uri> ! videoconvert !
- *                              samplefilter type=0 edge-value=125 ! videoconvert !
- *                              autovideosink
- */
 #include "kmsmouthdetect.h"
 
 #include <gst/gst.h>
@@ -53,6 +19,12 @@
 #define DEFAULT_FILTER_TYPE (KmsMouthDetectType)0
 #define NUM_FRAMES_TO_PROCESS 10
 #define FACE_TYPE "face"
+
+#define PROCESS_ALL_FRAMES 4
+#define GOP 4
+#define DEFAULT_SCALE_FACTOR 25
+#define MOUTH_SCALE_FACTOR 1.1
+
 
 #define FACE_CONF_FILE "/usr/share/opencv/haarcascades/haarcascade_frontalface_alt.xml"
 #define MOUTH_CONF_FILE "/usr/share/opencv/haarcascades/haarcascade_mcs_mouth.xml"
@@ -80,25 +52,36 @@ enum {
   PROP_0,
   PROP_VIEW_MOUTHS,
   PROP_DETECT_BY_EVENT,
-  PROP_SEND_META_DATA
+  PROP_SEND_META_DATA,
+  PROP_MULTI_SCALE_FACTOR,
+  PROP_WIDTH_TO_PROCESS,
+  PROP_PROCESS_X_EVERY_4_FRAMES
 };
 
 struct _KmsMouthDetectPrivate {
 
   IplImage *img_orig;
+  
   int img_width;
   int img_height;
   int view_mouths;
+  int num_frames_to_process;
+  int detect_event;
+  int meta_data;
+  int width_to_process; 
+  int process_x_every_4_frames;
+  int scale_factor;
+  int num_frame;
+
   float scale_o2f;//origin 2 face
   float scale_f2m;//face 2 mouth
   float scale_m2o;//mounth 2 origin 
+
   GRecMutex mutex;
   gboolean debug;
   GQueue *events_queue;
   GstClockTime pts;
-  int num_frames_to_process;
-  int detect_event;
-  int meta_data;
+
   vector<Rect> *faces;
   vector<Rect> *mouths;
   /*detect event*/
@@ -127,6 +110,9 @@ G_DEFINE_TYPE_WITH_CODE (KmsMouthDetect, kms_mouth_detect,
 						  PLUGIN_NAME, 0,
 						  
 						  "debug category for sample_filter element") );
+
+#define MULTI_SCALE_FACTOR(scale) (1 + scale*1.0/100)
+
 static CascadeClassifier fcascade;
 static CascadeClassifier mcascade;
 
@@ -172,8 +158,7 @@ static gboolean kms_mouth_detect_sink_events(GstBaseTransform * trans, GstEvent 
   default:
     break;
   }
-  ret = gst_pad_push_event (trans->srcpad, event);
-
+  ret=  gst_pad_event_default (trans->sinkpad, GST_OBJECT (trans), event);
 
   return ret;
 }
@@ -252,7 +237,7 @@ kms_mouth_detect_conf_images (KmsMouthDetect *mouth_detect,
 						      IPL_DEPTH_8U, 3);
 
   mouth_detect->priv->scale_o2f = ((float)frame->info.width) / ((float)FACE_WIDTH);
-  mouth_detect->priv->scale_m2o= ((float) frame->info.width) / ((float)MOUTH_WIDTH);
+  mouth_detect->priv->scale_m2o= ((float) frame->info.width) / ((float)mouth_detect->priv->width_to_process);
   mouth_detect->priv->scale_f2m = ((float)mouth_detect->priv->scale_o2f) / ((float)mouth_detect->priv->scale_m2o);
 
   mouth_detect->priv->img_orig->imageData = (char *) info.data;
@@ -283,12 +268,25 @@ kms_mouth_detect_set_property (GObject *object, guint property_id,
     mouth_detect->priv->meta_data =  g_value_get_int(value);
     break;
 
+  case PROP_PROCESS_X_EVERY_4_FRAMES:
+    mouth_detect->priv->process_x_every_4_frames = g_value_get_int(value);
+    break;
+
+  case PROP_MULTI_SCALE_FACTOR:
+    mouth_detect->priv->scale_factor = g_value_get_int(value);
+    break;
+
+  case PROP_WIDTH_TO_PROCESS:
+    mouth_detect->priv->width_to_process = g_value_get_int(value);
+    break;
+
   default:
     G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
     break;
   }
 
   KMS_MOUTH_DETECT_UNLOCK (mouth_detect);
+
 }
 
 static void
@@ -314,6 +312,18 @@ kms_mouth_detect_get_property (GObject *object, guint property_id,
     
   case PROP_SEND_META_DATA:
     g_value_set_int(value,mouth_detect->priv->meta_data);
+    break;
+
+  case PROP_PROCESS_X_EVERY_4_FRAMES:
+    g_value_set_int(value,mouth_detect->priv->process_x_every_4_frames);
+    break;
+
+  case PROP_MULTI_SCALE_FACTOR:
+    g_value_set_int(value,mouth_detect->priv->scale_factor);
+    break;
+
+  case PROP_WIDTH_TO_PROCESS:
+    g_value_set_int(value,mouth_detect->priv->width_to_process);
     break;
 
   default:
@@ -353,6 +363,8 @@ static bool __get_message(KmsMouthDetect *mouth,
   const gchar *str_type;
 
   len = gst_structure_n_fields (message);
+
+  mouth->priv->faces->clear();
 
   for (aux = 0; aux < len; aux++) {
     GstStructure *data;
@@ -417,7 +429,12 @@ static bool __process_alg(KmsMouthDetect *mouth_detect, GstClockTime f_pts)
 
 
   if (res) 
-    mouth_detect->priv->num_frames_to_process = NUM_FRAMES_TO_PROCESS;
+    mouth_detect->priv->num_frames_to_process = NUM_FRAMES_TO_PROCESS / 
+      (5 - mouth_detect->priv->process_x_every_4_frames);
+  // if we process all the images num_frame_to_process = 10 / 1
+  // if we process 3 per 4 images  num_frame_to_process = 10 / 5
+  // if we process 2 per 4 images  num_frame_to_process = 10 / 3
+  // if we process 1 per 4 images  num_frame_to_process = 10 / 2
   
   return res;
 }
@@ -446,78 +463,91 @@ kms_mouth_detect_process_frame(KmsMouthDetect *mouth_detect,int width,int height
 				    CV_RGB(0,255,255),
 				    CV_RGB(0,255,0)};	
 
-  faces->clear();
-  mouths->clear();
-
 
   if ( ! __process_alg(mouth_detect,pts) && mouth_detect->priv->num_frames_to_process <=0)
     return;
 
-  mouth_detect->priv->num_frames_to_process --;
+  mouth_detect->priv->num_frame++;
 
-  cvtColor( img, gray, CV_BGR2GRAY );
-
-  //if detect_event != 0 we have received faces as meta-data
-  if (0 == mouth_detect->priv->detect_event )
+  if ( (2 == mouth_detect->priv->process_x_every_4_frames && // one every 2 images
+	(1 == mouth_detect->priv->num_frame % 2)) ||  
+       ( (2 != mouth_detect->priv->process_x_every_4_frames) &&
+	 (mouth_detect->priv->num_frame <= mouth_detect->priv->process_x_every_4_frames)))    
     {
-      //setting up the image where the face detector will be executed
-      resize( gray, smallImg, smallImg.size(), 0, 0, INTER_LINEAR );
-      equalizeHist( smallImg, smallImg );
-      //detecting faces
-      fcascade.detectMultiScale( smallImg, *faces,
-				 1.1, 2, 0
-				 |CV_HAAR_SCALE_IMAGE,
-				 Size(3, 3) );
-    }
 
-    
-  //setting up the image where the mouth detector will be executed	
-  resize(gray,mouth_frame,mouth_frame.size(), 0,0,INTER_LINEAR);
-  equalizeHist( mouth_frame, mouth_frame);
-    
-    
-  for( vector<Rect>::iterator r = faces->begin(); r != faces->end(); r++, i++ )
-    {	
+      mouth_detect->priv->num_frames_to_process --;
+      cvtColor( img, gray, CV_BGR2GRAY );
 
-      color = colors[i%8];
-      if (mouth.size() > 0)
-	mouth.clear();
-	  
-      const int half_height=cvRound((float)r->height/1.8);
-      //Transforming the point detected in face image to mouht coordinates
-      //we only take the down half of the face to avoid excessive processing
-	
-      r_aux.y=(r->y + half_height)*scale_f2m;
-      r_aux.x=r->x*scale_f2m;
-      r_aux.height = half_height*scale_f2m;
-      r_aux.width = r->width*scale_f2m;
+      //if detect_event != 0 we have received faces as meta-data
+      if (0 == mouth_detect->priv->detect_event )
+	{
+	  //setting up the image where the face detector will be executed
+	  resize( gray, smallImg, smallImg.size(), 0, 0, INTER_LINEAR );
+	  equalizeHist( smallImg, smallImg );
+	  faces->clear();
+	  //detecting faces
+	  fcascade.detectMultiScale( smallImg, *faces,
+				     MULTI_SCALE_FACTOR(mouth_detect->priv->scale_factor), 2, 0
+				     |CV_HAAR_SCALE_IMAGE,
+				     Size(3, 3) );
+	}
       
-      mouthROI = mouth_frame(r_aux);
-      mcascade.detectMultiScale( mouthROI, mouth,
-				 1.1, 3, 0
-				 |CV_HAAR_FIND_BIGGEST_OBJECT,
-				 Size(1, 1));
+    
+      //setting up the image where the mouth detector will be executed	
+      resize(gray,mouth_frame,mouth_frame.size(), 0,0,INTER_LINEAR);
+      equalizeHist( mouth_frame, mouth_frame);
+    
+      mouths->clear();
 
-	for ( vector<Rect>::iterator m = mouth.begin(); m != mouth.end();m++,j++)	  
-	  {
+      for( vector<Rect>::iterator r = faces->begin(); r != faces->end(); r++, i++ )
+	{	
 
-	    Rect m_aux;
-	    //Transforming the point detected in mouth image to oring coordinates
-	    m_aux.x = cvRound((r_aux.x + m->x)*scale_m2o);
-	    m_aux.y= cvRound((r_aux.y+m->y)*scale_m2o);
-	    m_aux.width=(m->width-1)*scale_m2o;
-	    m_aux.height=(m->height-1)*scale_m2o;
-	    mouths->push_back(m_aux);
+	  const int half_height=cvRound((float)r->height/1.8);
+	  //Transforming the point detected in face image to mouht coordinates
+	  //we only take the down half of the face to avoid excessive processing
+	  
+	  r_aux.y=(r->y + half_height)*scale_f2m;
+	  r_aux.x=r->x*scale_f2m;
+	  r_aux.height = half_height*scale_f2m;
+	  r_aux.width = r->width*scale_f2m;
+	  
+	  mouthROI = mouth_frame(r_aux);
+	  /*In this case, the scale factor is fixed, values higher than 1.1 work much worse*/
+	  mouth.clear();
+	  mcascade.detectMultiScale( mouthROI, mouth,
+				     MOUTH_SCALE_FACTOR, 3, 0
+				     |CV_HAAR_FIND_BIGGEST_OBJECT,
+				     Size(1, 1));
+	  
+	  for ( vector<Rect>::iterator m = mouth.begin(); m != mouth.end();m++,j++)	  
+	    {
 
-	    if (1 == mouth_detect->priv->view_mouths)
-	      
-	      cvRectangle( mouth_detect->priv->img_orig, cvPoint(m_aux.x,m_aux.y),
-			   cvPoint(cvRound(((r_aux.x + m->x)+ m->width-1)*scale_m2o), 
-				   cvRound(((r_aux.y+m->y) + m->height-1)*scale_m2o)),
-			   color, 3, 8, 0);	    
-	  }
+	      Rect m_aux;
+	      //Transforming the point detected in mouth image to oring coordinates
+	      m_aux.x = cvRound((r_aux.x + m->x)*scale_m2o);
+	      m_aux.y= cvRound((r_aux.y+m->y)*scale_m2o);
+	      m_aux.width=(m->width-1)*scale_m2o;
+	      m_aux.height=(m->height-1)*scale_m2o;
+	      mouths->push_back(m_aux);	      
+	    }
+	}
 	  
     }
+
+  if (GOP == mouth_detect->priv->num_frame )
+    mouth_detect->priv->num_frame=0;
+  
+  //Printing on image
+  j=0;
+  if (1 == mouth_detect->priv->view_mouths)
+    for ( vector<Rect>::iterator m = mouths->begin(); m != mouths->end();m++,j++)	  
+      {
+	color = colors[j%8];     
+	cvRectangle( mouth_detect->priv->img_orig, cvPoint(m->x,m->y),
+		     cvPoint(cvRound(m->x + m->width), 
+			     cvRound(m->y + m->height-1)),
+		     color, 3, 8, 0);	    
+      }
 }
 
 /**
@@ -532,10 +562,10 @@ kms_mouth_detect_transform_frame_ip (GstVideoFilter *filter,
   GstMapInfo info;
   double scale_o2f=0.0,scale_m2o=0.0,scale_f2m=0.0;
   int width=0,height=0;
-      
+  FILE *f;
+  
   gst_buffer_map (frame->buffer, &info, GST_MAP_READ);
-  // setting up images
-  kms_mouth_detect_conf_images (mouth_detect, frame, info);
+  kms_mouth_detect_conf_images (mouth_detect, frame, info);  // setting up images
       
   KMS_MOUTH_DETECT_LOCK (mouth_detect);
       
@@ -552,11 +582,9 @@ kms_mouth_detect_transform_frame_ip (GstVideoFilter *filter,
 	
   if (1==mouth_detect->priv->meta_data)
     kms_mouth_send_event(mouth_detect,frame);
-   
-  mouth_detect->priv->faces->clear();
-  mouth_detect->priv->mouths->clear();
-    
+     
   gst_buffer_unmap (frame->buffer, &info);
+
 
   return GST_FLOW_OK;
 }
@@ -614,6 +642,11 @@ kms_mouth_detect_init (KmsMouthDetect *
   mouth_detect->priv->faces= new vector<Rect>;
   mouth_detect->priv->mouths= new vector<Rect>;
   mouth_detect->priv->num_frames_to_process=0;
+
+  mouth_detect->priv->process_x_every_4_frames=PROCESS_ALL_FRAMES;
+  mouth_detect->priv->num_frame=0;
+  mouth_detect->priv->scale_factor=DEFAULT_SCALE_FACTOR;
+  mouth_detect->priv->width_to_process=MOUTH_WIDTH;
 
   if (fcascade.empty())
     if (kms_mouth_detect_init_cascade() < 0)
@@ -673,6 +706,23 @@ kms_mouth_detect_class_init (KmsMouthDetectClass *mouth)
 				   g_param_spec_int ("meta-data", "send meta data",
 						     "0 (default) => it will not send meta data; 1 => it will send the bounding box of the mouth and face", 
 						     0,1,FALSE, (GParamFlags) G_PARAM_READWRITE));
+
+
+  g_object_class_install_property (gobject_class, PROP_WIDTH_TO_PROCESS,
+				   g_param_spec_int ("width-to-process", "width to process",
+						     "160,320 (default),480,640 => this will be the width of the image that the algorithm is going to process to detect mouths", 
+						     0,640,FALSE, (GParamFlags) G_PARAM_READWRITE));
+  
+  g_object_class_install_property (gobject_class,   PROP_PROCESS_X_EVERY_4_FRAMES,
+				   g_param_spec_int ("process-x-every-4-frames", "process x every 4 frames",
+						     "1,2,3,4 (default) => process x frames every 4 frames", 
+						     0,4,FALSE, (GParamFlags) G_PARAM_READWRITE));
+  
+  
+  g_object_class_install_property (gobject_class,   PROP_MULTI_SCALE_FACTOR,
+				   g_param_spec_int ("multi-scale-factor", "multi scale factor",
+						     "5-50  (25 default) => specifying how much the image size is reduced at each image scale.", 
+						     0,51,FALSE, (GParamFlags) G_PARAM_READWRITE));
 
 
   video_filter_class->transform_frame_ip =

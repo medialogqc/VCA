@@ -48,6 +48,39 @@
 			    "type": "int"
 			}	  
      		    ]
+		},
+		{
+		    "name": "multiScaleFactor",
+		    "doc": "Specify how much the image size is reduced at each haar image ",
+		    "params": [
+			{
+			    "name":"scaleFactor", 
+			    "doc":"5-50 (25 default)",
+			    "type": "int"
+			}
+		    ]
+		},
+		{
+		    "name": "processXevery4Frames",
+		    "doc": "process x every 4 frames",
+		    "params": [
+			{
+			    "name":"xper4", 
+			    "doc":"1,2,3,4 (default) => process x frames every 4 frames",
+			    "type": "int"
+			}
+		    ]
+		},
+		{
+		    "name": "widthToProcess",
+		    "doc": "this will be the width of the image that the algorithm is going to process to detect noses",
+		    "params": [
+			{
+			    "name":"width", 
+			    "doc":"160,320 (default),480,640",
+			    "type": "int"
+			}
+		    ]
 		}
 	    ]
 	}
