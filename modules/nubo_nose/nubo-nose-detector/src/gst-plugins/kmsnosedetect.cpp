@@ -29,7 +29,8 @@
 #define PROCESS_ALL_FRAMES 4
 #define DEFAULT_SCALE_FACTOR 25
 #define FACE_TYPE "face"
-
+#define NOSE_SCALE_FACTOR 1.1
+#define GOP 4
 using namespace cv;
 
 #define KMS_NOSE_DETECT_LOCK(nose_detect)				\
@@ -70,16 +71,16 @@ struct _KmsNoseDetectPrivate {
   int img_height;
   int width_to_process; 
   int view_noses;
-  GRecMutex mutex;
-  gboolean debug;
-  GQueue *events_queue;
-  GstClockTime pts;
   int num_frames_to_process;
   int detect_event;
   int meta_data;
   int scale_factor;
   int process_x_every_4_frames;
-  int num_frame;
+  int num_frame;  
+  GRecMutex mutex;
+  gboolean debug;
+  GQueue *events_queue;
+  GstClockTime pts;
   vector<Rect> *faces;
   vector<Rect> *noses;
   /*detect event*/
@@ -108,6 +109,9 @@ G_DEFINE_TYPE_WITH_CODE (KmsNoseDetect, kms_nose_detect,
 						  PLUGIN_NAME, 0,
 						  
 						  "debug category for sample_filter element") );
+
+#define MULTI_SCALE_FACTOR(scale) (1 + scale*1.0/100)
+
 static CascadeClassifier fcascade;
 static CascadeClassifier ncascade;
 
@@ -236,7 +240,7 @@ kms_nose_detect_conf_images (KmsNoseDetect *nose_detect,
 						     IPL_DEPTH_8U, 3);
   
   nose_detect->priv->scale_o2f = ((float)frame->info.width) / ((float)FACE_WIDTH);
-  nose_detect->priv->scale_n2o= ((float)frame->info.width) / ((float)NOSE_WIDTH);
+  nose_detect->priv->scale_n2o= ((float)frame->info.width) / ((float)nose_detect->priv->width_to_process);
   nose_detect->priv->scale_f2n = ((float)nose_detect->priv->scale_o2f)/((float)nose_detect->priv->scale_n2o);
 
   nose_detect->priv->img_orig->imageData = (char *) info.data;
@@ -253,6 +257,7 @@ kms_nose_detect_set_property (GObject *object, guint property_id,
   //code is protected with a mutex
   KMS_NOSE_DETECT_LOCK (nose_detect);
 
+
   switch (property_id) {
 
   case PROP_VIEW_NOSES:
@@ -266,7 +271,7 @@ kms_nose_detect_set_property (GObject *object, guint property_id,
     nose_detect->priv->meta_data =  g_value_get_int(value);
     break;
     
-  case PROP_PROCESS_X_EVERY_4_FRAMES:
+  case PROP_PROCESS_X_EVERY_4_FRAMES:   
     nose_detect->priv->process_x_every_4_frames = g_value_get_int(value);    
     break;
     
@@ -274,7 +279,7 @@ kms_nose_detect_set_property (GObject *object, guint property_id,
     nose_detect->priv->width_to_process = g_value_get_int(value);
     break;
     
-    case PROP_MULTI_SCALE_FACTOR:
+  case PROP_MULTI_SCALE_FACTOR:
     nose_detect->priv->scale_factor = g_value_get_int(value);
     break;
 
@@ -362,6 +367,8 @@ static bool __get_message(KmsNoseDetect *nose,
 
   len = gst_structure_n_fields (message);
 
+  nose->priv->faces->clear();
+
   for (aux = 0; aux < len; aux++) {
     GstStructure *data;
     gboolean ret;
@@ -423,11 +430,16 @@ static bool __process_alg(KmsNoseDetect *nose_detect, GstClockTime f_pts)
 	}
     }
 
-
   if (res) 
-    nose_detect->priv->num_frames_to_process = NUM_FRAMES_TO_PROCESS;
+    nose_detect->priv->num_frames_to_process = NUM_FRAMES_TO_PROCESS /
+      (5 - nose_detect->priv->process_x_every_4_frames);
+  // if we process all the images num_frame_to_process = 10 / 1
+  // if we process 3 per 4 images  num_frame_to_process = 10 / 5
+  // if we process 2 per 4 images  num_frame_to_process = 10 / 3
+  // if we process 1 per 4 images  num_frame_to_process = 10 / 2;
   
   return res;
+
 }
 
 static void
@@ -452,73 +464,90 @@ kms_nose_detect_process_frame(KmsNoseDetect *nose_detect,int width,int height,do
 				    CV_RGB(0,255,255),
 				    CV_RGB(0,128,255),
 				    CV_RGB(0,0,255)} ;
-  faces->clear();
-  noses->clear();
-  nose.clear();
 
   if ( ! __process_alg(nose_detect,pts) && nose_detect->priv->num_frames_to_process <=0)
     return;
 
-  nose_detect->priv->num_frames_to_process --;
+  nose_detect->priv->num_frame++;
 
-  cvtColor( img, gray, CV_BGR2GRAY );
-
-  //if detect_event != 0 we have received faces as meta-data
-  if ( 0 == nose_detect->priv->detect_event)
-    {
-      //setting up the image where the face detector will be executed
-      resize( gray, smallImg, smallImg.size(), 0, 0, INTER_LINEAR );
-      equalizeHist( smallImg, smallImg );
-
-        fcascade.detectMultiScale(smallImg,*faces,
-			    1.1,2,0 |CV_HAAR_SCALE_IMAGE,
-			    Size(3,3));
-    }
-
-  //setting up the image e where the nose detector will be executed	
-  resize(gray,nose_frame,nose_frame.size(), 0,0,INTER_LINEAR);
-  equalizeHist( nose_frame, nose_frame);
-
-  for( vector<Rect>::iterator r = faces->begin(); r != faces->end(); r++,i++ )
+  if ( (2 == nose_detect->priv->process_x_every_4_frames && // one every 2 images
+	(1 == nose_detect->priv->num_frame % 2)) ||  
+       ( (2 != nose_detect->priv->process_x_every_4_frames) &&
+	 (nose_detect->priv->num_frame <= nose_detect->priv->process_x_every_4_frames)))    
     {
 
-      color = colors[i%8];
-      const int top_height=cvRound((float)r->height*TOP_PERCENTAGE/100);
-      const int down_height=cvRound((float)r->height*DOWN_PERCENTAGE/100);
-      const int side_width=cvRound((float)r->width*SIDE_PERCENTAGE/100);      
-      	
-      if (nose.size()>0)
-	nose.clear();
-      //Transforming the point detected in face image to nose coordinates
-      //we only take the down half of the face to avoid excessive processing
-      r_aux.y=(r->y + top_height)*scale_f2n;
-      r_aux.x=(r->x+side_width)*scale_f2n;
-      r_aux.height = (r->height-down_height-top_height)*scale_f2n;
-      r_aux.width = (r->width-side_width)*scale_f2n;
-      noseROI = nose_frame(r_aux);
-      ncascade.detectMultiScale( noseROI, nose,
-				 1.1, 3, 0
-				 |CV_HAAR_FIND_BIGGEST_OBJECT,
-				 Size(1, 1));   
+      nose_detect->priv->num_frames_to_process --;
+      cvtColor( img, gray, CV_BGR2GRAY );
 
-      for ( vector<Rect>::iterator m = nose.begin(); m != nose.end();m++,j++)
+      //if detect_event != 0 we have received faces as meta-data
+      if ( 0 == nose_detect->priv->detect_event)
 	{
-	  Rect m_aux;
-	  m_aux.x=(r_aux.x + m->x)*scale_n2o;
-	  m_aux.y=(r_aux.y + m->y)*scale_n2o;
-	  m_aux.width=(m->width-1)*scale_n2o;
-	  m_aux.height=(m->height-1)*scale_n2o;
-	  noses->push_back(m_aux);
+	  //setting up the image where the face detector will be executed
+	  resize( gray, smallImg, smallImg.size(), 0, 0, INTER_LINEAR );
+	  equalizeHist( smallImg, smallImg );
+	  faces->clear();
+	  fcascade.detectMultiScale(smallImg,*faces,
+				    MULTI_SCALE_FACTOR(nose_detect->priv->scale_factor),2,
+				    0 |CV_HAAR_SCALE_IMAGE,
+				    Size(3,3));
+	}
 
-	  //Transforming the point detected in nose image to oring coordinates
-	  if (1 == nose_detect->priv->view_noses  )
-	    cvRectangle( nose_detect->priv->img_orig, cvPoint(m_aux.x,m_aux.y),
-			 cvPoint(cvRound(((r_aux.x + m->x)+ m->width-1)*scale_n2o), 
-				 cvRound(((r_aux.y+m->y) + m->height-1)*scale_n2o)),
-				 color, 3, 8, 0);	    
+      //setting up the image e where the nose detector will be executed	
+      resize(gray,nose_frame,nose_frame.size(), 0,0,INTER_LINEAR);
+      equalizeHist( nose_frame, nose_frame);
+
+      noses->clear();
+
+      for( vector<Rect>::iterator r = faces->begin(); r != faces->end(); r++,i++ )
+	{
+
+	  color = colors[i%8];
+	  const int top_height=cvRound((float)r->height*TOP_PERCENTAGE/100);
+	  const int down_height=cvRound((float)r->height*DOWN_PERCENTAGE/100);
+	  const int side_width=cvRound((float)r->width*SIDE_PERCENTAGE/100);      
+	  
+
+	  //Transforming the point detected in face image to nose coordinates
+	  //we only take the down half of the face to avoid excessive processing
+	  r_aux.y=(r->y + top_height)*scale_f2n;
+	  r_aux.x=(r->x+side_width)*scale_f2n;
+	  r_aux.height = (r->height-down_height-top_height)*scale_f2n;
+	  r_aux.width = (r->width-side_width)*scale_f2n;
+	  noseROI = nose_frame(r_aux);
+	  nose.clear();
+	  ncascade.detectMultiScale( noseROI, nose,
+				     NOSE_SCALE_FACTOR, 3,
+				     0|CV_HAAR_FIND_BIGGEST_OBJECT,
+				     Size(1, 1));   
+
+	  for ( vector<Rect>::iterator m = nose.begin(); m != nose.end();m++,j++)
+	    {
+	      Rect m_aux;
+	      m_aux.x=(r_aux.x + m->x)*scale_n2o;
+	      m_aux.y=(r_aux.y + m->y)*scale_n2o;
+	      m_aux.width=(m->width-1)*scale_n2o;
+	      m_aux.height=(m->height-1)*scale_n2o;
+	      noses->push_back(m_aux);
+	    }
 	}
     }
 
+  if (GOP == nose_detect->priv->num_frame )
+    nose_detect->priv->num_frame=0;
+
+  //Printing on image
+  j=0;
+  if (1 == nose_detect->priv->view_noses  )
+    for ( vector<Rect>::iterator m = noses->begin(); m != noses->end();m++,j++)	  
+      {
+	color = colors[j%8];     
+	cvRectangle( nose_detect->priv->img_orig, cvPoint(m->x,m->y),
+		     cvPoint(cvRound(m->x + m->width), 
+			     cvRound(+m->y+ m->height-1)),
+		     color, 3, 8, 0);	    
+
+      }
+  
 }
 /**
  * This function contains the image processing.
@@ -555,10 +584,8 @@ kms_nose_detect_transform_frame_ip (GstVideoFilter *filter,
       kms_nose_send_event(nose_detect,frame);
     }
 
-  nose_detect->priv->faces->clear();
-  nose_detect->priv->noses->clear();
-
   gst_buffer_unmap (frame->buffer, &info);
+
 
   return GST_FLOW_OK;
 }
@@ -679,7 +706,7 @@ kms_nose_detect_class_init (KmsNoseDetectClass *nose)
 
 g_object_class_install_property (gobject_class, PROP_WIDTH_TO_PROCCESS,
 				   g_param_spec_int ("width-to-process", "width to process",
-						     "160,320 (default),480,640 => this will be the width of the image that the algorithm is going to process to detect mouths", 
+						     "160,320 (default),480,640 => this will be the width of the image that the algorithm is going to process to detect noses", 
 						     0,640,FALSE, (GParamFlags) G_PARAM_READWRITE));
 
  g_object_class_install_property (gobject_class,   PROP_PROCESS_X_EVERY_4_FRAMES,

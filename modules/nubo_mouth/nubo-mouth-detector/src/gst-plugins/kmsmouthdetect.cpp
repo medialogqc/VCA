@@ -15,7 +15,7 @@
 
 #define PLUGIN_NAME "nubomouthdetector"
 #define FACE_WIDTH 160
-#define MOUTH_WIDTH 640
+#define MOUTH_WIDTH 320
 #define DEFAULT_FILTER_TYPE (KmsMouthDetectType)0
 #define NUM_FRAMES_TO_PROCESS 10
 #define FACE_TYPE "face"
@@ -480,15 +480,14 @@ kms_mouth_detect_process_frame(KmsMouthDetect *mouth_detect,int width,int height
 
       //if detect_event != 0 we have received faces as meta-data
       if (0 == mouth_detect->priv->detect_event )
-	{
+	{ //detecting faces
 	  //setting up the image where the face detector will be executed
 	  resize( gray, smallImg, smallImg.size(), 0, 0, INTER_LINEAR );
 	  equalizeHist( smallImg, smallImg );
 	  faces->clear();
-	  //detecting faces
 	  fcascade.detectMultiScale( smallImg, *faces,
-				     MULTI_SCALE_FACTOR(mouth_detect->priv->scale_factor), 2, 0
-				     |CV_HAAR_SCALE_IMAGE,
+				     MULTI_SCALE_FACTOR(mouth_detect->priv->scale_factor), 2, 
+				     0 | CV_HAAR_SCALE_IMAGE,
 				     Size(3, 3) );
 	}
       

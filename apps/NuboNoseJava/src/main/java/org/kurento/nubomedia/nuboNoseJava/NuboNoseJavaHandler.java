@@ -71,6 +71,16 @@ public class NuboNoseJavaHandler extends TextWebSocketHandler {
 		case "show_noses":	
 			setVisualization(session,jsonMessage);
 			break;
+		case "scale_factor":	    
+		    setScaleFactor(session,jsonMessage);
+		    break;
+		case "process_num_frames":
+		    setProcessNumberFrames(session,jsonMessage);
+		    break;
+		case "width_to_process":
+		    setWidthToProcess(session,jsonMessage);
+		    break;
+
 		case "stop": {
 			UserSession user = users.remove(session.getId());
 			if (user != null) {
@@ -132,11 +142,11 @@ public class NuboNoseJavaHandler extends TextWebSocketHandler {
 					});
 
 			nose = new NuboNoseDetector.Builder(pipeline).build();
-
 			
 			webRtcEndpoint.connect(nose);
 			nose.connect(webRtcEndpoint);
-
+			
+			
 			// SDP negotiation (offer and answer)
 			String sdpOffer = jsonMessage.get("sdpOffer").getAsString();
 			String sdpAnswer = webRtcEndpoint.processOffer(sdpOffer);
@@ -169,6 +179,58 @@ public class NuboNoseJavaHandler extends TextWebSocketHandler {
                 }
         }
 
+    private void setScaleFactor(WebSocketSession session,JsonObject jsonObject)
+    {
+	
+	try{
+	    int scale = jsonObject.get("val").getAsInt();
+	    
+	    if (null != nose)
+		{
+		    log.debug("Sending setscaleFactor...." + scale);		  
+		    nose.multiScaleFactor(scale);
+		}
+	    
+	} catch (Throwable t){
+	    sendError(session,t.getMessage());
+	}
+    }
+
+    private void setProcessNumberFrames(WebSocketSession session,JsonObject jsonObject)
+    {
+	
+	try{
+	    int num_img = jsonObject.get("val").getAsInt();
+	    
+	    if (null != nose)
+		{
+		    log.debug("Sending process num frames...." + num_img);
+		    
+		    nose.processXevery4Frames(num_img);
+ 		}
+	    
+	} catch (Throwable t){
+	    sendError(session,t.getMessage());
+	}
+    }
+		
+    private void setWidthToProcess(WebSocketSession session,JsonObject jsonObject)
+    {
+	
+	try{
+	    int width = jsonObject.get("val").getAsInt();
+	    
+	    if (null != nose)
+		{
+		    log.debug("Sending width...." + width);
+		    nose.widthToProcess(width);
+		}
+	    
+	} catch (Throwable t){
+	    sendError(session,t.getMessage());
+	}
+    } 
+	
 	private void sendError(WebSocketSession session, String message) {
 		try {
 			JsonObject response = new JsonObject();

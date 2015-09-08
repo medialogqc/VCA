@@ -62,19 +62,17 @@ namespace kurento
 
       void NuboNoseDetectorImpl::multiScaleFactor(int scaleFactor)
       {
-	printf("NuboNoseDetectorImpl.cpp receive scale Factor %d \n",scaleFactor);
-//g_object_set(G_OBJECT (nubo_nose),FACTOR_SCALE , scaleFactor, NULL);
+	
+	g_object_set(G_OBJECT (nubo_nose),FACTOR_SCALE , scaleFactor, NULL);
       }
 
       void NuboNoseDetectorImpl::processXevery4Frames(int xper4)
       {
-	printf("NuboNoseDetectorImpl.cpp receive fps  %d \n",xper4);
 	g_object_set(G_OBJECT (nubo_nose),X_EVERY_4_FRAMES , xper4, NULL);
       }
 
       void NuboNoseDetectorImpl::widthToProcess(int width)
       {
-	printf("NuboNoseDetectorImpl.cpp width  %d \n",width);
 	g_object_set(G_OBJECT (nubo_nose),WIDTH_TO_PROCESS , width, NULL);
       }
 
