@@ -71,6 +71,15 @@ public class NuboEyeJavaHandler extends TextWebSocketHandler {
 		case "show_eyes":	
 			setVisualization(session,jsonMessage);
 			break;
+		case "scale_factor":
+			setScaleFactor(session,jsonMessage);
+		    break;
+		case "process_num_frames":
+			setProcessNumberFrames(session,jsonMessage);
+		    break;
+		case "width_to_process":
+			setWidthToProcess(session,jsonMessage);
+		    break;
 		case "stop": {
 			UserSession user = users.remove(session.getId());
 			if (user != null) {
@@ -168,6 +177,59 @@ public class NuboEyeJavaHandler extends TextWebSocketHandler {
                        	sendError(session,t.getMessage());
                 }
         }
+
+	private void setScaleFactor(WebSocketSession session,JsonObject jsonObject)
+    {
+	
+	try{
+	    int scale = jsonObject.get("val").getAsInt();
+	    
+	    if (null != eye)
+		{
+		    log.debug("Sending setscaleFactor...." + scale);		  
+		    eye.multiScaleFactor(scale);
+		}
+	    
+	} catch (Throwable t){
+	    sendError(session,t.getMessage());
+	}
+    }
+
+    private void setProcessNumberFrames(WebSocketSession session,JsonObject jsonObject)
+    {
+	
+	try{
+	    int num_img = jsonObject.get("val").getAsInt();
+	    
+	    if (null != eye)
+		{
+		    log.debug("Sending process num frames...." + num_img);
+		    
+		    eye.processXevery4Frames(num_img);
+ 		}
+	    
+	} catch (Throwable t){
+	    sendError(session,t.getMessage());
+	}
+    }
+		
+    private void setWidthToProcess(WebSocketSession session,JsonObject jsonObject)
+    {
+	
+	try{
+	    int width = jsonObject.get("val").getAsInt();
+	    
+	    if (null != eye)
+		{
+		    log.debug("Sending width...." + width);
+		    eye.widthToProcess(width);
+		}
+	    
+	} catch (Throwable t){
+	    sendError(session,t.getMessage());
+	}
+    } 
+
 
 	private void sendError(WebSocketSession session, String message) {
 		try {

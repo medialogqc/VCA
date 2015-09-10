@@ -10,8 +10,8 @@
 
 
 #define PLUGIN_NAME "nuboeyedetector"
-#define FACE_WIDTH 320
-#define EYE_WIDTH 640
+#define FACE_WIDTH 160
+#define EYE_WIDTH 320
 
 #define DEFAULT_FILTER_TYPE (KmsEyeDetectType)0
 
@@ -25,6 +25,11 @@
 #define SIDE_PERCENTAGE 0
 #define NUM_FRAMES_TO_PROCESS 10
 #define FACE_TYPE "face"
+
+#define PROCESS_ALL_FRAMES 4
+#define GOP 4
+#define DEFAULT_SCALE_FACTOR 25
+#define EYE_SCALE_FACTOR 1.1
 
 using namespace cv;
 
@@ -49,7 +54,10 @@ enum {
   PROP_0,
   PROP_VIEW_EYES,
   PROP_DETECT_BY_EVENT,
-  PROP_SEND_META_DATA
+  PROP_SEND_META_DATA,  
+  PROP_MULTI_SCALE_FACTOR,
+  PROP_WIDTH_TO_PROCESS,
+  PROP_PROCESS_X_EVERY_4_FRAMES
 };
 
 struct _KmsEyeDetectPrivate {
@@ -68,6 +76,10 @@ struct _KmsEyeDetectPrivate {
   int num_frames_to_process;
   int detect_event;
   int meta_data;
+  int width_to_process; 
+  int process_x_every_4_frames;
+  int scale_factor;
+  int num_frame;
   vector<Rect> *faces;
   vector<Rect> *eyes_l;
   vector<Rect> *eyes_r;
@@ -96,6 +108,8 @@ G_DEFINE_TYPE_WITH_CODE (KmsEyeDetect, kms_eye_detect,
                          GST_DEBUG_CATEGORY_INIT (kms_eye_detect_debug_category,
 						  PLUGIN_NAME, 0,			  
 						  "debug category for sample_filter element") );
+
+#define MULTI_SCALE_FACTOR(scale) (1 + scale*1.0/100)
 
 static CascadeClassifier fcascade;
 static CascadeClassifier eyes_rcascade;
@@ -147,7 +161,7 @@ static gboolean kms_eye_detect_sink_events(GstBaseTransform * trans, GstEvent * 
   default:
     break;
   }
-  //ret = gst_pad_push_event (trans->srcpad, event);
+
   ret=  gst_pad_event_default (trans->sinkpad, GST_OBJECT (trans), event);
 
   return ret;
@@ -244,9 +258,8 @@ kms_eye_detect_conf_images (KmsEyeDetect *eye_detect,
 						    IPL_DEPTH_8U, 3);
   
   eye_detect->priv->scale_o2f = ((float)frame->info.width) / ((float)FACE_WIDTH);
-  eye_detect->priv->scale_o2e = ((float)frame->info.width) / ((float)EYE_WIDTH);
-  //eye_detect->priv->scale_f2e = ((float)eye_detect->priv->scale_o2e) / ((float)eye_detect->priv->scale_o2f);
-
+  eye_detect->priv->scale_o2e = ((float)frame->info.width) / ((float)eye_detect->priv->width_to_process);
+  
   eye_detect->priv->img_orig->imageData = (char *) info.data;
 }
 
@@ -261,6 +274,7 @@ kms_eye_detect_set_property (GObject *object, guint property_id,
   //code is protected with a mutex
   KMS_EYE_DETECT_LOCK (eye_detect);
 
+
   switch (property_id) {
 
   case PROP_VIEW_EYES:
@@ -273,6 +287,20 @@ kms_eye_detect_set_property (GObject *object, guint property_id,
   case PROP_SEND_META_DATA:
     eye_detect->priv->meta_data =  g_value_get_int(value);
     break;
+
+
+  case PROP_PROCESS_X_EVERY_4_FRAMES:
+    eye_detect->priv->process_x_every_4_frames = g_value_get_int(value);    
+    break;
+
+  case PROP_MULTI_SCALE_FACTOR:
+    eye_detect->priv->scale_factor = g_value_get_int(value);
+    break;
+
+  case PROP_WIDTH_TO_PROCESS:
+    eye_detect->priv->width_to_process = g_value_get_int(value);
+    break;
+
 
   default:
     G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
@@ -306,6 +334,18 @@ kms_eye_detect_get_property (GObject *object, guint property_id,
     
   case PROP_SEND_META_DATA:
     g_value_set_int(value,eye_detect->priv->meta_data);
+    break;
+
+  case PROP_PROCESS_X_EVERY_4_FRAMES:
+    g_value_set_int(value,eye_detect->priv->process_x_every_4_frames);
+    break;
+
+  case PROP_MULTI_SCALE_FACTOR:
+    g_value_set_int(value,eye_detect->priv->scale_factor);
+    break;
+
+  case PROP_WIDTH_TO_PROCESS:
+    g_value_set_int(value,eye_detect->priv->width_to_process);
     break;
 
   default:
@@ -345,6 +385,8 @@ static bool __get_message(KmsEyeDetect *eye,
   const gchar *str_type;
 
   len = gst_structure_n_fields (message);
+
+  eye->priv->faces->clear();
 
   for (aux = 0; aux < len; aux++) {
     GstStructure *data;
@@ -421,7 +463,8 @@ static bool __process_alg(KmsEyeDetect *eye_detect, GstClockTime f_pts)
 
 
   if (res) 
-    eye_detect->priv->num_frames_to_process = NUM_FRAMES_TO_PROCESS;
+    eye_detect->priv->num_frames_to_process = NUM_FRAMES_TO_PROCESS / 
+      (5 - eye_detect->priv->process_x_every_4_frames); ;
   
   return res;
 }
@@ -534,101 +577,122 @@ kms_eye_detect_process_frame(KmsEyeDetect *eye_detect,int width,int height,doubl
   std::vector<Rect> *faces=eye_detect->priv->faces;
   std::vector<Rect> *eyes_r=eye_detect->priv->eyes_r;
   std::vector<Rect> *eyes_l=eye_detect->priv->eyes_l;
+  vector<Rect> eye_r,eye_l;
   Rect r_aux;
   Rect eye_right;
-
-  faces->clear();
-  eyes_r->clear();
-  eyes_l->clear();
-
 
   if ( ! __process_alg(eye_detect,pts) && eye_detect->priv->num_frames_to_process <=0)
     return;
 
-  eye_detect->priv->num_frames_to_process--;    
-  cvtColor( img, frame_gray, COLOR_BGR2GRAY );
-  equalizeHist( frame_gray, frame_gray );
+  eye_detect->priv->num_frame++;
 
-  /*To detect the faces we need to work in 320 240*/
-  //if detect_event != 0 we have received faces as meta-data
-  if (0 == eye_detect->priv->detect_event )
-    {      
-      resize(frame_gray,f_faces,f_faces.size(),0,0,INTER_LINEAR);
-      fcascade.detectMultiScale(f_faces, *faces, 1.2, 3, 0, Size(30, 30));  
-    }
   
-  int i = 0;
-  for( vector<Rect>::iterator r = faces->begin(); r != faces->end(); r++, i++ )
+  if ( (2 == eye_detect->priv->process_x_every_4_frames && // one every 2 images
+	(1 == eye_detect->priv->num_frame % 2)) ||  
+       ( (2 != eye_detect->priv->process_x_every_4_frames) &&
+	 (eye_detect->priv->num_frame <= eye_detect->priv->process_x_every_4_frames)))    
     {
+
+      eye_detect->priv->num_frames_to_process--;    
+      cvtColor( img, frame_gray, COLOR_BGR2GRAY );
+      equalizeHist( frame_gray, frame_gray );
+
+      /*To detect the faces we need to work in 320 240*/
+      //if detect_event != 0 we have received faces as meta-data
+      printf("Before faces \n");
+      if (0 == eye_detect->priv->detect_event )
+	{      
+	  resize(frame_gray,f_faces,f_faces.size(),0,0,INTER_LINEAR);
+	  faces->clear();
+	  fcascade.detectMultiScale(f_faces, *faces, 
+				    MULTI_SCALE_FACTOR(eye_detect->priv->scale_factor),
+				    3, 0, Size(30, 30));   //1.2
+	}
+  
+      int i = 0;
       eyes_r->clear();
       eyes_l->clear();
-      
-      /*To detect eyes we need to work in 640 480*/
-      r_aux.x = r->x*scale_o2f;
-      r_aux.y = r->y*scale_o2f;
-      r_aux.width = r->width*scale_o2f;
-      r_aux.height  = r->height*scale_o2f;
-                  
-      Point center( r_aux.x + r_aux.width/2, r_aux.y + r_aux.height/2 );
-      down_height=cvRound((float)r_aux.height*DOWN_PERCENTAGE/100);
-      top_height=cvRound((float)r_aux.height*TOP_PERCENTAGE/100);
-      
-      /*rectangle( img, cvPoint(r_aux.x,r_aux.y + top_height ),
-		 cvPoint(cvRound((r_aux.x + r_aux.width/2)), 
-			 cvRound(((r_aux.y) + r_aux.height - down_height))),
-			 Scalar(0,0,255), 3, 8, 0);*/
+      for( vector<Rect>::iterator r = faces->begin(); r != faces->end(); r++, i++ )
+	{   
+	  /*To detect eyes we need to work in 640 480*/
+	  r_aux.x = r->x*scale_o2f;
+	  r_aux.y = r->y*scale_o2f;
+	  r_aux.width = r->width*scale_o2f;
+	  r_aux.height  = r->height*scale_o2f;
+	  
+	  down_height=cvRound((float)r_aux.height*DOWN_PERCENTAGE/100);
+	  top_height=cvRound((float)r_aux.height*TOP_PERCENTAGE/100);
+	  
+	  f_aux.x= r_aux.x;
+	  f_aux.y= r_aux.y + top_height;
+	  f_aux.height= r_aux.height - top_height - down_height;
+	  f_aux.width = r_aux.width/2;
+	  
+	  Mat faceROI = frame_gray(f_aux);
             
-      f_aux.x= r_aux.x;
-      f_aux.y= r_aux.y + top_height;
-      f_aux.height= r_aux.height - top_height - down_height;
-      f_aux.width = r_aux.width/2;
-           
-      Mat faceROI = frame_gray(f_aux);
-            
-      //-- In each face, detect eyes
-      eyes_rcascade.detectMultiScale( faceROI, *eyes_r, 1.1, 2, 0 |CASCADE_SCALE_IMAGE, 
-      Size(20, 20) );
-      __mergeEyes(f_aux,*eyes_r,*eyes_r,false);
-      /*rectangle( img, cvPoint(r_aux.x + r_aux.width/2,r_aux.y + top_height ),
-		 cvPoint(cvRound((r_aux.x + r_aux.width)), 
-			 cvRound(((r_aux.y) + r_aux.height - down_height))),
-			 Scalar(0,0,255), 3, 8, 0);*/
-      	
-      f_aux.x=  r_aux.x + r_aux.width/2;	
-      f_aux.y= r_aux.y + top_height;
-      f_aux.height= r_aux.height - top_height- down_height;
-      f_aux.width = r_aux.width/2;
-
-      faceROI = frame_gray(f_aux);
-      eyes_lcascade.detectMultiScale( faceROI, *eyes_l, 1.1, 2, 0 |CASCADE_SCALE_IMAGE, 
-				      Size(20, 20) );
-      
-      __mergeEyes(f_aux,*eyes_r,*eyes_l,true);
-
-      /*Here we only have one BB per eye_x*/
-      if (1 == eye_detect->priv->view_eyes )
-	{
-	  int radius=-1;
-
-	  if (eyes_r->size() > 0)
+	  //-- In each face, detect eyes. The pointed obtained are related to the ROI
+	  eye_r.clear();
+	  eyes_rcascade.detectMultiScale( faceROI, eye_r,EYE_SCALE_FACTOR , 2, 
+					  0 |CASCADE_SCALE_IMAGE, 
+					  Size(20, 20));	  
+	    
+	  if (eye_r.size() > 0)
 	    {
-	      Point eye_center_r( r_aux.x +  (*eyes_r)[0].x + (*eyes_r)[0].width/2,
-				  r_aux.y + top_height + (*eyes_r)[0].y + (*eyes_r)[0].height/2 );
-	      radius = cvRound( ((*eyes_r)[0].width + (*eyes_r)[0].height)*0.25 );
-	      circle( img, eye_center_r, radius, Scalar( 255, 0, 0 ), 4, 8, 0 );
+	      __mergeEyes(f_aux,eye_r,eye_r,false);		  
+	      Rect bb_reye(r_aux.x + eye_r[0].x,r_aux.y + eye_r[0].y + top_height,
+			   eye_r[0].width,eye_r[0].height);
+	      eyes_r->push_back(bb_reye);
 	    }
-	     
-	  if (eyes_l->size() > 0)
+	  
+	  
+	  f_aux.x=  r_aux.x + r_aux.width/2;	
+	  f_aux.y= r_aux.y + top_height;
+	  f_aux.height= r_aux.height - top_height- down_height;
+	  f_aux.width = r_aux.width/2;
+	  
+	  faceROI = frame_gray(f_aux);
+
+	  eye_l.clear(); 
+	  eyes_lcascade.detectMultiScale( faceROI, eye_l, EYE_SCALE_FACTOR,  2,
+					  0 |CASCADE_SCALE_IMAGE, 
+					  Size(20, 20) );
+	  if (eye_l.size() > 0)
 	    {
-	      Point eye_center_l( r_aux.x + r_aux.width/2 + (*eyes_l)[0].x + (*eyes_l)[0].width/2,
-				  r_aux.y + top_height + (*eyes_l)[0].y + (*eyes_l)[0].height/2 );
-	      if (radius < 0)
-		radius = cvRound( ((*eyes_l)[0].width + (*eyes_l)[0].height)*0.25 );
-	      
-	      circle( img, eye_center_l, radius, Scalar( 255, 0, 0 ), 4, 8, 0 );
+	      __mergeEyes(f_aux,eye_r,eye_l,true);
+	      Rect bb_leye(r_aux.x + r_aux.width/2 + eye_l[0].x,
+			   r_aux.y + top_height + eye_l[0].y,eye_l[0].width,eye_l[0].height);
+	      eyes_l->push_back(bb_leye);
 	    }
 	}
     }
+      
+  if (GOP == eye_detect->priv->num_frame )
+    eye_detect->priv->num_frame=0;
+  
+  /*Here we only have one BB per eye_x*/
+  if (1 == eye_detect->priv->view_eyes )
+    {
+      int radius=-1;
+      
+      if (eyes_r->size() > 0)
+	{
+	  Point eye_center_r( (*eyes_r)[0].x + (*eyes_r)[0].width/2,
+			      (*eyes_r)[0].y + (*eyes_r)[0].height/2 );
+	  radius = cvRound( ((*eyes_r)[0].width + (*eyes_r)[0].height)*0.25 );
+	  circle( img, eye_center_r, radius, Scalar( 255, 0, 0 ), 4, 8, 0 );
+	}
+      
+      if (eyes_l->size() > 0)
+	{
+	  Point eye_center_l(  (*eyes_l)[0].x + (*eyes_l)[0].width/2,
+			       (*eyes_l)[0].y + (*eyes_l)[0].height/2 );
+	  if (radius < 0)
+	    radius = cvRound( ((*eyes_l)[0].width + (*eyes_l)[0].height)*0.25 );
+	  
+	  circle( img, eye_center_l, radius, Scalar( 255, 0, 0 ), 4, 8, 0 );
+	}
+    }
+  
 }
 
 /**
@@ -642,7 +706,7 @@ kms_eye_detect_transform_frame_ip (GstVideoFilter *filter,
   GstMapInfo info;
   double scale_o2f=0.0,scale_o2e=0.0;
   int width=0,height=0;
-
+  
   gst_buffer_map (frame->buffer, &info, GST_MAP_READ);
   //setting up images
   kms_eye_detect_conf_images (eye_detect, frame, info);
@@ -659,16 +723,13 @@ kms_eye_detect_transform_frame_ip (GstVideoFilter *filter,
 
   kms_eye_detect_process_frame(eye_detect,width,height,scale_o2f,
 			       scale_o2e,frame->buffer->pts);
-
+  
   if (1==eye_detect->priv->meta_data)
     kms_eye_send_event(eye_detect,frame);
 
-  eye_detect->priv->faces->clear();
-  eye_detect->priv->eyes_l->clear();
-  eye_detect->priv->eyes_r->clear();
-
   gst_buffer_unmap (frame->buffer, &info);
 
+ 
   return GST_FLOW_OK;
 }
 
@@ -725,10 +786,14 @@ kms_eye_detect_init (KmsEyeDetect *
   eye_detect->priv->eyes_r= new vector<Rect>;
   eye_detect->priv->num_frames_to_process=0;
 
+  eye_detect->priv->process_x_every_4_frames=PROCESS_ALL_FRAMES;
+  eye_detect->priv->num_frame=0;
+  eye_detect->priv->scale_factor=DEFAULT_SCALE_FACTOR;
+  eye_detect->priv->width_to_process=EYE_WIDTH;
+
   if (fcascade.empty())
     if (kms_eye_detect_init_cascade() < 0)
       std::cout << "Error: init cascade" << std::endl;
-
 
   if (ret != 0)
     GST_DEBUG ("Error reading the haar cascade configuration file");
@@ -781,6 +846,21 @@ kms_eye_detect_class_init (KmsEyeDetectClass *eye)
 						     "0 (default) => it will not send meta data; 1 => it will send the bounding box of the eye and face", 
 						     0,1,FALSE, (GParamFlags) G_PARAM_READWRITE));
 
+  g_object_class_install_property (gobject_class, PROP_WIDTH_TO_PROCESS,
+				   g_param_spec_int ("width-to-process", "width to process",
+						     "160,320 (default),480,640 => this will be the width of the image that the algorithm is going to process to detect eyes", 
+						     0,640,FALSE, (GParamFlags) G_PARAM_READWRITE));
+  
+  g_object_class_install_property (gobject_class,   PROP_PROCESS_X_EVERY_4_FRAMES,
+				   g_param_spec_int ("process-x-every-4-frames", "process x every 4 frames",
+						     "1,2,3,4 (default) => process x frames every 4 frames", 
+						     0,4,FALSE, (GParamFlags) G_PARAM_READWRITE));
+  
+  
+  g_object_class_install_property (gobject_class,   PROP_MULTI_SCALE_FACTOR,
+				   g_param_spec_int ("multi-scale-factor", "multi scale factor",
+						     "5-50  (25 default) => specifying how much the image size is reduced at each image scale.", 
+						     0,51,FALSE, (GParamFlags) G_PARAM_READWRITE));
 	  
   video_filter_class->transform_frame_ip =
     GST_DEBUG_FUNCPTR (kms_eye_detect_transform_frame_ip);

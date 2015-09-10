@@ -16,6 +16,9 @@ GST_DEBUG_CATEGORY_STATIC (GST_CAT_DEFAULT);
 #define VIEW_EYES "view-eyes"
 #define DETECT_BY_EVENT "detect-event"
 #define SEND_META_DATA "send-meta-data"
+#define FACTOR_SCALE "multi-scale-factor"
+#define X_EVERY_4_FRAMES "process-x-every-4-frames"
+#define WIDTH_TO_PROCESS "width-to-process"
 
 namespace kurento
 {
@@ -56,6 +59,22 @@ namespace kurento
       {
 	g_object_set(G_OBJECT (nubo_eye),SEND_META_DATA , metaData, NULL);
       }
+
+      void NuboEyeDetectorImpl::multiScaleFactor(int scaleFactor)
+      {
+	g_object_set(G_OBJECT (nubo_eye),FACTOR_SCALE , scaleFactor, NULL);
+      }
+
+      void NuboEyeDetectorImpl::processXevery4Frames(int xper4)
+      {
+	g_object_set(G_OBJECT (nubo_eye),X_EVERY_4_FRAMES , xper4, NULL);
+      }
+
+      void NuboEyeDetectorImpl::widthToProcess(int width)
+      {
+ 	g_object_set(G_OBJECT (nubo_eye),WIDTH_TO_PROCESS , width, NULL);
+      }
+
 
       MediaObjectImpl *
       NuboEyeDetectorImplFactory::createObject (const boost::property_tree::ptree &config, std::shared_ptr<MediaPipeline> mediaPipeline) const

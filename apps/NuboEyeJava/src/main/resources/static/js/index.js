@@ -196,6 +196,36 @@ function show_eyes() {
 	
 }
 
+
+function set_fps(value) {
+    var message = {
+	id : 'process_num_frames',
+	val : value
+    };
+    
+    sendMessage(message);
+	
+}
+
+function set_size(value) {
+    var message = {
+	id : 'width_to_process',
+	val : value
+    };
+    
+    sendMessage(message);
+    
+}
+
+
+function set_scale(value) {
+    var message = {
+	id : 'scale_factor',
+	val : value
+    };
+    
+    sendMessage(message);    
+}
 /**
  * Lightbox utility (to display media pipeline image in a modal dialog)
  */

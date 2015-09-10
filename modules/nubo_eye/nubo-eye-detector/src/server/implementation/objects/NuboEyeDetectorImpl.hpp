@@ -49,6 +49,9 @@ namespace kurento
 	void showEyes (int viewEyes);
 	void detectByEvent(int event);
 	void sendMetaData(int metaData);
+	void multiScaleFactor(int scaleFactor);
+	void processXevery4Frames(int xper4);
+	void widthToProcess(int width);
 
 	/* Next methods are automatically implemented by code generator */
 	virtual bool connect (const std::string &eventType, std::shared_ptr<EventHandler> handler);
