@@ -73,7 +73,7 @@
 		},
 		{
 		    "name": "widthToProcess",
-		    "doc": "this will be the width of the image that the algorithm is going to process to detect noses",
+		    "doc": "this will be the width of the image that the algorithm is going to process to detect eyes",
 		    "params": [
 			{
 			    "name":"width", 

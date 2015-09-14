@@ -71,6 +71,15 @@ public class NuboEarJavaHandler extends TextWebSocketHandler {
 		case "show_ears":	
 			setVisualization(session,jsonMessage);
 			break;
+		case "scale_factor":
+			setScaleFactor(session,jsonMessage);
+		    break;
+		case "process_num_frames":
+			setProcessNumberFrames(session,jsonMessage);
+		    break;
+		case "width_to_process":
+			setWidthToProcess(session,jsonMessage);
+		    break;			
 		case "stop": {
 			UserSession user = users.remove(session.getId());
 			if (user != null) {
@@ -162,12 +171,69 @@ public class NuboEarJavaHandler extends TextWebSocketHandler {
                	try{
                        	visualizeEar = jsonObject.get("val").getAsInt();
                         if (null != ear)
+                        {
+                        		System.out.println("Visuzlize Ear .... " + visualizeEar);
        	                        ear.showEars(visualizeEar);
+                        }
 
                	} catch (Throwable t){
                        	sendError(session,t.getMessage());
                 }
         }
+	
+	private void setScaleFactor(WebSocketSession session,JsonObject jsonObject)
+    {
+	
+	try{
+	    int scale = jsonObject.get("val").getAsInt();
+	    
+	    if (null != ear)
+		{
+		    log.debug("Sending setscaleFactor...." + scale);		  
+		    ear.multiScaleFactor(scale);
+		}
+	    
+	} catch (Throwable t){
+	    sendError(session,t.getMessage());
+	}
+    }
+
+    private void setProcessNumberFrames(WebSocketSession session,JsonObject jsonObject)
+    {
+	
+	try{
+	    int num_img = jsonObject.get("val").getAsInt();
+	    
+	    if (null != ear)
+		{
+		    log.debug("Sending process num frames...." + num_img);
+		    
+		    ear.processXevery4Frames(num_img);
+ 		}
+	    
+	} catch (Throwable t){
+	    sendError(session,t.getMessage());
+	}
+    }
+		
+    private void setWidthToProcess(WebSocketSession session,JsonObject jsonObject)
+    {
+	
+	try{
+	    int width = jsonObject.get("val").getAsInt();
+	    
+	    if (null != ear)
+		{
+		    log.debug("Sending width...." + width);
+		    ear.widthToProcess(width);
+		}
+	    
+	} catch (Throwable t){
+	    sendError(session,t.getMessage());
+	}
+    } 
+
+
 
 	private void sendError(WebSocketSession session, String message) {
 		try {

@@ -15,6 +15,9 @@ GST_DEBUG_CATEGORY_STATIC (GST_CAT_DEFAULT);
 #define VIEW_EARS "view-ears"
 #define DETECT_BY_EVENT "detect-event"
 #define SEND_META_DATA "send-meta-data"
+#define FACTOR_SCALE "multi-scale-factor"
+#define X_EVERY_4_FRAMES "process-x-every-4-frames"
+#define WIDTH_TO_PROCESS "width-to-process"
 
 namespace kurento
 {
@@ -56,6 +59,22 @@ namespace kurento
       void NuboEarDetectorImpl::sendMetaData(int metaData)
       {
 	g_object_set(G_OBJECT (nubo_ear),SEND_META_DATA , metaData, NULL);
+      }
+
+      
+      void NuboEarDetectorImpl::multiScaleFactor(int scaleFactor)
+      {
+	g_object_set(G_OBJECT (nubo_ear),FACTOR_SCALE , scaleFactor, NULL);
+      }
+      
+      void NuboEarDetectorImpl::processXevery4Frames(int xper4)
+      {
+	g_object_set(G_OBJECT (nubo_ear),X_EVERY_4_FRAMES , xper4, NULL);
+      }
+      
+      void NuboEarDetectorImpl::widthToProcess(int width)
+      {
+ 	g_object_set(G_OBJECT (nubo_ear),WIDTH_TO_PROCESS , width, NULL);
       }
 
 
