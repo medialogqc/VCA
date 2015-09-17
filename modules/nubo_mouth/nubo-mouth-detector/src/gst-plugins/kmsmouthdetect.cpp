@@ -25,10 +25,8 @@
 #define DEFAULT_SCALE_FACTOR 25
 #define MOUTH_SCALE_FACTOR 1.1
 
-
 #define FACE_CONF_FILE "/usr/share/opencv/haarcascades/haarcascade_frontalface_alt.xml"
 #define MOUTH_CONF_FILE "/usr/share/opencv/haarcascades/haarcascade_mcs_mouth.xml"
-
 
 using namespace cv;
 
@@ -174,6 +172,7 @@ static void kms_mouth_send_event(KmsMouthDetect *mouth_detect,GstVideoFrame *fra
   char elem_id[10];
   vector<Rect> *fd=mouth_detect->priv->faces;
   vector<Rect> *md=mouth_detect->priv->mouths;
+  int norm_faces = mouth_detect->priv->scale_o2f;
 
   message= gst_structure_new_empty("message");
   ts=gst_structure_new("time",
@@ -186,23 +185,25 @@ static void kms_mouth_send_event(KmsMouthDetect *mouth_detect,GstVideoFrame *fra
     {
       face = gst_structure_new("face",
 			       "type", G_TYPE_STRING,"face", 
-			       "x", G_TYPE_UINT,(guint) r->x, 
-			       "y", G_TYPE_UINT,(guint) r->y, 
-			       "width",G_TYPE_UINT, (guint)r->width,
-			       "height",G_TYPE_UINT, (guint)r->height,
+			       "x", G_TYPE_UINT,(guint) r->x * norm_faces, 
+			       "y", G_TYPE_UINT,(guint) r->y * norm_faces, 
+			       "width",G_TYPE_UINT, (guint)r->width * norm_faces,
+			       "height",G_TYPE_UINT, (guint)r->height * norm_faces,
 			       NULL);
       sprintf(elem_id,"%d",i);
       gst_structure_set(message,elem_id,GST_TYPE_STRUCTURE, face,NULL);
       gst_structure_free(face);
     }
   
+
+  //mouths were already normalized on kms_mouth_detect_process_frame.
   for(  vector<Rect>::const_iterator m = md->begin(); m != md->end(); m++,i++ )
     {
       mouth = gst_structure_new("mouth",
 			       "type", G_TYPE_STRING,"mouth", 
-			       "x", G_TYPE_UINT,(guint) m->x, 
-			       "y", G_TYPE_UINT,(guint) m->y, 
-			       "width",G_TYPE_UINT, (guint)m->width,
+			       "x", G_TYPE_UINT,(guint) m->x , 
+			       "y", G_TYPE_UINT,(guint) m->y , 
+			       "width",G_TYPE_UINT, (guint)m->width, 
 			       "height",G_TYPE_UINT, (guint)m->height,
 			       NULL);
       sprintf(elem_id,"%d",i);
@@ -236,8 +237,14 @@ kms_mouth_detect_conf_images (KmsMouthDetect *mouth_detect,
 							     frame->info.height),
 						      IPL_DEPTH_8U, 3);
 
-  mouth_detect->priv->scale_o2f = ((float)frame->info.width) / ((float)FACE_WIDTH);
+  if (mouth_detect->priv->detect_event) 
+    /*If we receive faces through event, the coordinates are normalized to the img orig size*/
+    mouth_detect->priv->scale_o2f = ((float)frame->info.width) / ((float)frame->info.width);
+  else 
+    mouth_detect->priv->scale_o2f = ((float)frame->info.width) / ((float)FACE_WIDTH);
+
   mouth_detect->priv->scale_m2o= ((float) frame->info.width) / ((float)mouth_detect->priv->width_to_process);
+
   mouth_detect->priv->scale_f2m = ((float)mouth_detect->priv->scale_o2f) / ((float)mouth_detect->priv->scale_m2o);
 
   mouth_detect->priv->img_orig->imageData = (char *) info.data;
@@ -561,8 +568,8 @@ kms_mouth_detect_transform_frame_ip (GstVideoFilter *filter,
   GstMapInfo info;
   double scale_o2f=0.0,scale_m2o=0.0,scale_f2m=0.0;
   int width=0,height=0;
-  FILE *f;
-  
+
+
   gst_buffer_map (frame->buffer, &info, GST_MAP_READ);
   kms_mouth_detect_conf_images (mouth_detect, frame, info);  // setting up images
       
@@ -583,8 +590,7 @@ kms_mouth_detect_transform_frame_ip (GstVideoFilter *filter,
     kms_mouth_send_event(mouth_detect,frame);
      
   gst_buffer_unmap (frame->buffer, &info);
-
-
+  
   return GST_FLOW_OK;
 }
 

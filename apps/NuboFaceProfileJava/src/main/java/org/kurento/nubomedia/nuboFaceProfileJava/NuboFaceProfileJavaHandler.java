@@ -24,13 +24,13 @@ import org.kurento.client.MediaPipeline;
 import org.kurento.client.OnIceCandidateEvent;
 import org.kurento.client.WebRtcEndpoint;
 import org.kurento.jsonrpc.JsonUtils;
-import org.kurento.module.nubofacedetector.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
+
 import org.kurento.module.nubofacedetector.*;
 import org.kurento.module.nubomouthdetector.*;
 import org.kurento.module.nubonosedetector.*;
@@ -51,6 +51,10 @@ public class NuboFaceProfileJavaHandler extends TextWebSocketHandler {
 
 	private final Logger log = LoggerFactory.getLogger(NuboFaceProfileJavaHandler.class);
 	private static final Gson gson = new GsonBuilder().create();
+	private final String EYE_FILTER = "eye";
+	private final String MOUTH_FILTER = "mouth";
+	private final String NOSE_FILTER = "nose";
+	private final String FACE_FILTER = "face";
 
 	private final ConcurrentHashMap<String, UserSession> users = new ConcurrentHashMap<String, UserSession>();
 
@@ -74,26 +78,58 @@ public class NuboFaceProfileJavaHandler extends TextWebSocketHandler {
 				JsonObject.class);
 
 		log.debug("Incoming message: {}", jsonMessage);
-
+		System.out.println(" ");
+		System.out.println(" ");
+		System.out.println(" ");
 		switch (jsonMessage.get("id").getAsString()) {
 		case "start":
+			System.out.println("Start Received");
 			start(session, jsonMessage);
-			break;
-		case "show_faces":	
+			break;		
+		case "show_faces":
+			System.out.println("Show faces received");
 			setViewFaces(session,jsonMessage);
 			break;
 
 		case "show_mouths":
+			System.out.println("Show mouths received");
 			setViewMouths(session,jsonMessage);
 			break;
 			
 		case "show_noses":
+			System.out.println("Show noses received");
 			setViewNoses(session,jsonMessage);
 			break;
 			
 		case "show_eyes":
+			System.out.println("Show eyes received");	
 			setViewEyes(session,jsonMessage);
 			break;
+		case "face_res":
+			System.out.println("Face Resolution received");	
+			changeResolution(FACE_FILTER,session,jsonMessage);
+			System.out.println("Face Resolution received");
+			break;
+		case "mouth_res":
+			System.out.println("Mouth resolution received");
+			changeResolution(this.MOUTH_FILTER,session,jsonMessage);
+			break;
+		case "nose_res":
+			System.out.println("Nose resolution received");
+			changeResolution(this.NOSE_FILTER,session,jsonMessage);
+			break;
+		case "eye_res":
+			System.out.println("Eye resolution received");
+			changeResolution(this.EYE_FILTER,session,jsonMessage);
+			break;
+		case "fps":
+			System.out.println("FPs resolution received");
+			setFps(session,jsonMessage);
+			break;
+		case "scale_factor":
+			System.out.println("Scale Factor received");
+			setScaleFactor(session,jsonMessage);
+			break;		
 		case "stop": {
 			UserSession user = users.remove(session.getId());
 			if (user != null) {
@@ -116,6 +152,7 @@ public class NuboFaceProfileJavaHandler extends TextWebSocketHandler {
 		}
 
 		default:
+			System.out.println("Invalid message with id " + jsonMessage.get("id").getAsString());
 			sendError(session,
 					"Invalid message with id "
 							+ jsonMessage.get("id").getAsString());
@@ -161,12 +198,12 @@ public class NuboFaceProfileJavaHandler extends TextWebSocketHandler {
 			
 
 			mouth = new NuboMouthDetector.Builder(pipeline).build();
-			mouth.sendMetaData(1);
+			mouth.sendMetaData(0);
 			mouth.detectByEvent(1);
 			mouth.showMouths(0);
 
 			nose = new NuboNoseDetector.Builder(pipeline).build();
-			nose.sendMetaData(1);
+			nose.sendMetaData(0);
 			nose.detectByEvent(1);
 			nose.showNoses(0);
 			
@@ -176,14 +213,14 @@ public class NuboFaceProfileJavaHandler extends TextWebSocketHandler {
 			eye.showEyes(0);
 			
 			webRtcEndpoint.connect(face);
-			face.connect(mouth);
+			 	
+			face.connect(mouth);			
 			mouth.connect(nose);
-			nose.connect(eye);
+			nose.connect(eye);			
 			eye.connect(webRtcEndpoint);
-
 			
 			// SDP negotiation (offer and answer)
-			String sdpOffer = jsonMessage.get("sdpOffer").getAsString();
+			String sdpOffer = jsonMessage.get("sdpOffer").getAsString();			
 			String sdpAnswer = webRtcEndpoint.processOffer(sdpOffer);
 
 			// Sending response back to client
@@ -251,6 +288,66 @@ public class NuboFaceProfileJavaHandler extends TextWebSocketHandler {
 				
 			if (null != eye)
 				eye.showEyes(visualizeEye);
+			
+		} catch (Throwable t){
+			sendError(session,t.getMessage());
+		}
+	}
+	
+	private void changeResolution(final String filterType, WebSocketSession session, JsonObject jsonObject)
+	{
+		int val;
+		try{
+			System.out.println("In change resolution");
+			val = jsonObject.get("val").getAsInt();
+			System.out.println("in Change Resolution filter type " + filterType + " value " );
+			
+			if (filterType == this.EYE_FILTER && null != eye)
+				eye.widthToProcess(val);
+			
+			else if (filterType == this.MOUTH_FILTER && null != mouth)
+				mouth.widthToProcess(val);
+			else if (filterType == this.NOSE_FILTER && null != nose )
+				nose.widthToProcess(val);
+			else if (filterType == this.FACE_FILTER && null != face )
+				face.widthToProcess(val);
+			else if (filterType == this.EYE_FILTER && null != eye )
+				eye.widthToProcess(val);
+			
+		} catch (Throwable t){
+			System.out.println("Error Change Resolution ");
+			sendError(session,t.getMessage());
+		}
+	}
+
+	private void setFps(WebSocketSession session,JsonObject jsonObject)
+	{
+		int val;
+		try{
+			val = jsonObject.get("val").getAsInt();
+				
+			if (null != face)
+				face.processXevery4Frames(val);
+			if (null != nose)
+				nose.processXevery4Frames(val);
+			if ( null != mouth)
+				mouth.processXevery4Frames(val);
+			if ( null != eye)
+				eye.processXevery4Frames(val);
+			
+		} catch (Throwable t){
+			sendError(session,t.getMessage());
+		}
+	}
+	
+	private void setScaleFactor (WebSocketSession session,JsonObject jsonObject)
+	{
+		int val;
+		try{
+			val = jsonObject.get("val").getAsInt();
+				
+			if (null != face)
+				face.multiScaleFactor(val);				
 			
 		} catch (Throwable t){
 			sendError(session,t.getMessage());

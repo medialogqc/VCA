@@ -197,7 +197,7 @@ function show_faces() {
 }
 
 function set_fps(value) {
-    alert(value)
+    
     var message = {
 	id : 'process_num_frames',
 	val : value
@@ -208,7 +208,7 @@ function set_fps(value) {
 }
 
 function set_size(value) {
-    alert(value)
+    
     var message = {
 	id : 'width_to_process',
 	val : value
@@ -220,7 +220,7 @@ function set_size(value) {
 
 
 function set_scale(value) {
-    alert(value)
+    
     var message = {
 	id : 'scale_factor',
 	val : value

@@ -74,16 +74,94 @@
 	  </div>
 	</div>		
       </div>
-      <!-- </div> -->		
-      
-      
-      <div class="row" style="margin-left:190px"  >
-	<input id="show_faces" type="checkbox"  required name="terms" onchange="show_faces()"> Show detected Faces &nbsp;
-	<input id="show_mouths" type="checkbox"  required name="terms" onchange="show_mouths()"> Show detected Mouths &nbsp;
-	<input id="show_noses" type="checkbox"  required name="terms" onchange="show_noses()"> Show detected Noses &nbsp;
-	<input id="show_eyes" type="checkbox"  required name="terms" onchange="show_eyes()"> Show detected Eyes &nbsp;
-	<br/> <br/>
+      <!-- </div> -->		      
+      <div class="page-header">
+	<div class="row" style="margin-left:150px"  >
+	  <h4 style="margin-left:320px">Configuration</h4>
+	  <table  style="margin: 20px 10px 20px 10px">
+	    <tr>
+	      <td align="left" width="65px"> <span >Face Res.</span> </td>
+	      <td align="left" width="120px">
+		<select id="face_resolution" style="width:80px" onchange="send_param('face_res',this.value)">
+		  <option value="640"> 640x480 </option>
+		  <option value="320"> 320x240 </option>
+		  <option selected="selected" value="160"> 160x120 </option>
+		  <option value="80"> 80x60 </option>
+		</select>
+	      </td>
+
+	      <td align="left" width="75px"> <span >Mouth Res.</span> </td>
+	      <td align="left" width="120px">
+		<select id="mouth_resolution" style="width:80px" onchange="send_param('mouth_res',this.value)">
+		  <option value="640"> 640x480 </option>
+		  <option selected="selected" value="320"> 320x240 </option>
+		  <option value="160"> 160x120 </option>
+		  <option value="80"> 80x60 </option>
+		</select>
+	      </td>
+	      
+	      <td align="left" width="70px"> <span >Nose Res.</span> </td>
+	      <td align="left" width="120px">
+		<select id="nose_resolution" style="width:80px" onchange="send_param('nose_res',this.value)">
+		  <option value="640"> 640x480 </option>
+		  <option selected="selected" value="320"> 320x240 </option>
+		  <option value="160"> 160x120  </option>
+		  <option value="80"> 80x60 </option>
+		</select>
+	      </td>
+	      
+	      <td align="left" width="60px"> <span >Eye Res.</span> </td>
+	      <td align="left" width="120px">
+		<select id="nose_resolution" style="width:80px" onchange="send_param('eye_res',this.value)">
+		  <option value="640"> 640x480 </option>
+		  <option selected="selected" value="320"> 320x240 </option>
+		  <option value="160"> 160x120 </option>
+		  <option value="80"> 80x60 </option>
+		</select>
+	      </td>
+	    </tr>
+	    <tr><td height="20px"></td></tr>
+	    <tr>
+	      <td align="left" width="65px"> </td>
+	      <td align="left" width="120px"> </td>
+	      <td align="left" width="82px"> <span >Scale Factor</span> </td>
+	      <td align="left" width="120px">
+		<select id="scale_factor" style="width:65px" onchange="send_param('scale_factor',this.value)">
+		  <option value="5"> 5% </option>
+		  <option value="10"> 10% </option>
+		  <option value="15"> 15% </option>
+		  <option value="20"> 20% </option>
+		  <option selected="selected" value="25"> 25% </option>
+		  <option value="30"> 30% </option>
+		  <option value="35"> 35% </option>
+		  <option value="40"> 40% </option>		  
+		  <option value="45"> 45% </option>
+		  <option value="50"> 50% </option>				  
+		</select>
+	      </td>	      
+	      <td align="left" width="65px"> <span >Fps</span> </td>
+	      <td align="left" width="120px">
+		<select id="select_fps" style="width:65px" onchange="send_param('fps',this.value)">
+		  <option value="1"> 8 fps </option>
+		  <option value="2"> 12 fps </option>
+		  <option value="3"> 18 fps </option>
+		  <option selected="selected" value="4"> 24 fps </option>
+		</select>
+	      </td>
+	    </tr>
+	  </table>
+	       
 	</div>
+	<div class="row" style="margin-left:195px"  >
+	  <input id="show_faces" type="checkbox"  required name="terms" onchange="show_faces()"> Show detected Faces &nbsp;
+	  <input id="show_mouths" type="checkbox"  required name="terms" onchange="show_mouths()"> Show detected Mouths &nbsp;
+	  <input id="show_noses" type="checkbox"  required name="terms" onchange="show_noses()"> Show detected Noses &nbsp;
+	  <input id="show_eyes" type="checkbox"  required name="terms" onchange="show_eyes()"> Show detected Eyes &nbsp;
+	  <br/> <br/>
+	</div>
+	<table><tr><td height="20px"></td></tr>
+	</table>
+      </div>
       <div class="row" style="margin-left:400px"  >
 	<a id="start" href="#" class="btn btn-success"
 	   onclick="start(); return false;">

@@ -31,6 +31,7 @@
 #define DEFAULT_SCALE_FACTOR 25
 #define EYE_SCALE_FACTOR 1.1
 
+
 using namespace cv;
 
 #define KMS_EYE_DETECT_LOCK(eye_detect)					\
@@ -64,7 +65,8 @@ struct _KmsEyeDetectPrivate {
 
   IplImage *img_orig;  
   float scale_o2f;//origin 2 face
-  float scale_o2e;//orig  2 face
+  float scale_o2e;//orig  2 eye
+  float scale_f2e;//face  2 eye
 
   int img_width;
   int img_height;
@@ -178,6 +180,7 @@ static void kms_eye_send_event(KmsEyeDetect *eye_detect,GstVideoFrame *frame)
   vector<Rect> *fd=eye_detect->priv->faces;
   vector<Rect> *ed_l=eye_detect->priv->eyes_l;
   vector<Rect> *ed_r=eye_detect->priv->eyes_l;
+  int norm_faces = eye_detect->priv->scale_o2f;
 
   message= gst_structure_new_empty("message");
   ts=gst_structure_new("time",
@@ -190,24 +193,25 @@ static void kms_eye_send_event(KmsEyeDetect *eye_detect,GstVideoFrame *frame)
     {
       face = gst_structure_new("face",
 			       "type", G_TYPE_STRING,"face", 
-			       "x", G_TYPE_UINT,(guint) r->x, 
-			       "y", G_TYPE_UINT,(guint) r->y, 
-			       "width",G_TYPE_UINT, (guint)r->width,
-			       "height",G_TYPE_UINT, (guint)r->height,
+			       "x", G_TYPE_UINT,(guint) r->x * norm_faces, 
+			       "y", G_TYPE_UINT,(guint) r->y * norm_faces, 
+			       "width",G_TYPE_UINT, (guint)r->width * norm_faces,
+			       "height",G_TYPE_UINT, (guint)r->height * norm_faces,
 			       NULL);
       sprintf(elem_id,"%d",i);
       gst_structure_set(message,elem_id,GST_TYPE_STRUCTURE, face,NULL);
       gst_structure_free(face);
     }
   
+  /*eyes are already normalized*/
   for(  vector<Rect>::const_iterator m = ed_l->begin(); m != ed_l->end(); m++,i++ )
     {
       eye = gst_structure_new("eye_left",
 			      "type", G_TYPE_STRING,"eye", 
 			      "x", G_TYPE_UINT,(guint) m->x, 
 			      "y", G_TYPE_UINT,(guint) m->y, 
-			      "width",G_TYPE_UINT, (guint)m->width,
-			      "height",G_TYPE_UINT, (guint)m->height,
+			      "width",G_TYPE_UINT, (guint)m->width ,
+			      "height",G_TYPE_UINT, (guint)m->height ,
 			      NULL);
       sprintf(elem_id,"%d",i);
       gst_structure_set(message,elem_id,GST_TYPE_STRUCTURE, eye,NULL);
@@ -242,7 +246,7 @@ kms_eye_detect_conf_images (KmsEyeDetect *eye_detect,
   
   eye_detect->priv->img_height = frame->info.height;
   eye_detect->priv->img_width  = frame->info.width;
-
+  
   if ( ((eye_detect->priv->img_orig != NULL)) &&
        ((eye_detect->priv->img_orig->width != frame->info.width)
 	|| (eye_detect->priv->img_orig->height != frame->info.height)) )
@@ -250,16 +254,22 @@ kms_eye_detect_conf_images (KmsEyeDetect *eye_detect,
       cvReleaseImage(&eye_detect->priv->img_orig);
       eye_detect->priv->img_orig = NULL;
     }
-
+  
   if (eye_detect->priv->img_orig == NULL)
     
     eye_detect->priv->img_orig= cvCreateImageHeader(cvSize(frame->info.width,
 							   frame->info.height),
 						    IPL_DEPTH_8U, 3);
   
-  eye_detect->priv->scale_o2f = ((float)frame->info.width) / ((float)FACE_WIDTH);
+  if (eye_detect->priv->detect_event) 
+    /*If we receive faces through event, the coordinates are normalized to the img orig size*/
+    eye_detect->priv->scale_o2f = ((float)frame->info.width) / ((float)frame->info.width);
+  else 
+    eye_detect->priv->scale_o2f = ((float)frame->info.width) / ((float)FACE_WIDTH);
+  
   eye_detect->priv->scale_o2e = ((float)frame->info.width) / ((float)eye_detect->priv->width_to_process);
   
+  eye_detect->priv->scale_f2e = ((float)eye_detect->priv->scale_o2f) / ((float)eye_detect->priv->scale_o2e);
   eye_detect->priv->img_orig->imageData = (char *) info.data;
 }
 
@@ -415,16 +425,6 @@ static bool __get_message(KmsEyeDetect *eye,
 	      gst_structure_get (data, "width", G_TYPE_UINT, & r.width, NULL);
 	      gst_structure_get (data, "height", G_TYPE_UINT, & r.height, NULL);	  	 
 	      gst_structure_free (data);
-
-	      /*we need to multiply by 2 due to the faces detected on nose are base on 160 x 120. 
-		And in this filter we work at 320 x 240. 
-
-		ToDO: Send the face coordinates normalized at 640x 480  */
-	      
-	      r.x = r.x *2;
-	      r.y = r.y * 2;
-	      r.width = r.width*2;
-	      r.height = r.height *2;
 	      eye->priv->faces->push_back(r);
 	    }	  
 	  result=true;
@@ -566,11 +566,12 @@ int i =0;
 
 static void
 kms_eye_detect_process_frame(KmsEyeDetect *eye_detect,int width,int height,double scale_o2f,
-			     double scale_o2e,GstClockTime pts)
+			     double scale_o2e,double scale_f2e, GstClockTime pts)
 {
   Mat img (eye_detect->priv->img_orig);
   Mat f_faces(cvRound(img.rows/scale_o2f),cvRound(img.cols/scale_o2f),CV_8UC1);
   Mat frame_gray;
+  Mat eye_frame (cvRound(img.rows/scale_o2e), cvRound(img.cols/scale_o2e), CV_8UC1);
   Rect f_aux;
   int down_height=0;
   int top_height=0;
@@ -608,17 +609,19 @@ kms_eye_detect_process_frame(KmsEyeDetect *eye_detect,int width,int height,doubl
 				    MULTI_SCALE_FACTOR(eye_detect->priv->scale_factor),
 				    3, 0, Size(30, 30));   //1.2
 	}
-  
+      resize(frame_gray,eye_frame,eye_frame.size(), 0,0,INTER_LINEAR);
+      equalizeHist( eye_frame, eye_frame);
+
       int i = 0;
       eyes_r->clear();
       eyes_l->clear();
       for( vector<Rect>::iterator r = faces->begin(); r != faces->end(); r++, i++ )
 	{   
-	  /*To detect eyes we need to work in 640 480*/
-	  r_aux.x = r->x*scale_o2f;
-	  r_aux.y = r->y*scale_o2f;
-	  r_aux.width = r->width*scale_o2f;
-	  r_aux.height  = r->height*scale_o2f;
+	  /*To detect eyes we need to work in the normal width 640 480*/
+	  r_aux.x = r->x*scale_f2e;
+	  r_aux.y = r->y*scale_f2e;
+	  r_aux.width = r->width*scale_f2e;
+	  r_aux.height  = r->height*scale_f2e;
 	  
 	  down_height=cvRound((float)r_aux.height*DOWN_PERCENTAGE/100);
 	  top_height=cvRound((float)r_aux.height*TOP_PERCENTAGE/100);
@@ -628,7 +631,7 @@ kms_eye_detect_process_frame(KmsEyeDetect *eye_detect,int width,int height,doubl
 	  f_aux.height= r_aux.height - top_height - down_height;
 	  f_aux.width = r_aux.width/2;
 	  
-	  Mat faceROI = frame_gray(f_aux);
+	  Mat faceROI = eye_frame(f_aux);
             
 	  //-- In each face, detect eyes. The pointed obtained are related to the ROI
 	  eye_r.clear();
@@ -639,8 +642,10 @@ kms_eye_detect_process_frame(KmsEyeDetect *eye_detect,int width,int height,doubl
 	  if (eye_r.size() > 0)
 	    {
 	      __mergeEyes(f_aux,eye_r,eye_r,false);		  
-	      Rect bb_reye(r_aux.x + eye_r[0].x,r_aux.y + eye_r[0].y + top_height,
-			   eye_r[0].width,eye_r[0].height);
+	      Rect bb_reye((r_aux.x + eye_r[0].x)*scale_o2e,
+			   (r_aux.y + eye_r[0].y + top_height)*scale_o2e,
+			   (eye_r[0].width -1) *scale_o2e ,
+			   (eye_r[0].height-1)*scale_o2e);
 	      eyes_r->push_back(bb_reye);
 	    }
 	  
@@ -650,7 +655,7 @@ kms_eye_detect_process_frame(KmsEyeDetect *eye_detect,int width,int height,doubl
 	  f_aux.height= r_aux.height - top_height- down_height;
 	  f_aux.width = r_aux.width/2;
 	  
-	  faceROI = frame_gray(f_aux);
+	  faceROI = eye_frame(f_aux);
 
 	  eye_l.clear(); 
 	  eyes_lcascade.detectMultiScale( faceROI, eye_l, EYE_SCALE_FACTOR,  2,
@@ -659,8 +664,10 @@ kms_eye_detect_process_frame(KmsEyeDetect *eye_detect,int width,int height,doubl
 	  if (eye_l.size() > 0)
 	    {
 	      __mergeEyes(f_aux,eye_r,eye_l,true);
-	      Rect bb_leye(r_aux.x + r_aux.width/2 + eye_l[0].x,
-			   r_aux.y + top_height + eye_l[0].y,eye_l[0].width,eye_l[0].height);
+	      Rect bb_leye((r_aux.x + r_aux.width/2 + eye_l[0].x) *scale_o2e ,
+			   (r_aux.y + top_height + eye_l[0].y) *scale_o2e ,
+			   (eye_l[0].width - 1 ) *scale_o2e,
+			   (eye_l[0].height -1 ) *scale_o2e);
 	      eyes_l->push_back(bb_leye);
 	    }
 	}
@@ -704,9 +711,9 @@ kms_eye_detect_transform_frame_ip (GstVideoFilter *filter,
 {
   KmsEyeDetect *eye_detect = KMS_EYE_DETECT (filter);
   GstMapInfo info;
-  double scale_o2f=0.0,scale_o2e=0.0;
+  double scale_o2f=0.0,scale_o2e=0.0,scale_f2e;
   int width=0,height=0;
-  
+
   gst_buffer_map (frame->buffer, &info, GST_MAP_READ);
   //setting up images
   kms_eye_detect_conf_images (eye_detect, frame, info);
@@ -715,6 +722,7 @@ kms_eye_detect_transform_frame_ip (GstVideoFilter *filter,
 
   scale_o2f = eye_detect->priv->scale_o2f;
   scale_o2e= eye_detect->priv->scale_o2e;
+  scale_f2e = eye_detect->priv->scale_f2e;
 
   width = eye_detect->priv->img_width;
   height = eye_detect->priv->img_height;
@@ -722,14 +730,13 @@ kms_eye_detect_transform_frame_ip (GstVideoFilter *filter,
   KMS_EYE_DETECT_UNLOCK (eye_detect);
 
   kms_eye_detect_process_frame(eye_detect,width,height,scale_o2f,
-			       scale_o2e,frame->buffer->pts);
+			       scale_o2e,scale_f2e,frame->buffer->pts);
   
   if (1==eye_detect->priv->meta_data)
     kms_eye_send_event(eye_detect,frame);
 
   gst_buffer_unmap (frame->buffer, &info);
 
- 
   return GST_FLOW_OK;
 }
 

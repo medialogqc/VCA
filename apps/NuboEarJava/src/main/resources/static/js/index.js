@@ -212,8 +212,7 @@ function set_size(value) {
 	val : value
     };
     
-    sendMessage(message);
-    
+    sendMessage(message);    
 }
 
 

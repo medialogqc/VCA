@@ -242,6 +242,14 @@ function show_eyes() {
 	
 }
 
+function send_param(mid,value) {
+    var message = {
+	id : mid,
+	val : value
+    };
+    sendMessage(message);    
+}
+
 /**
  * Lightbox utility (to display media pipeline image in a modal dialog)
  */

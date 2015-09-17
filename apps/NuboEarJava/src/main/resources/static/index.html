@@ -72,7 +72,7 @@
 	  About the configuration:
 	  <ul>
 	    <li><b>Fps:</b>With this paramteter we indicate the number of frames pers seconds.The more fps, the detection will be more robust but the computation will be worse </li>
-	    <li><b>Size To Process</b>With this paramteter we indicate the size of the image used to detect ears. Higher size, the detection will be more robust, but the computation time will be worse. The recommended values for this option are 640x480 and 320x240. For this example the size of the image to detect faces has been fixed to 160, if you want to change this parameter you have to create a pipeline composed by face and ear detector  </li>
+	    <li><b>Size To Process</b>With this paramteter we indicate the size of the image used to detect ears. Higher size, the detection will be more robust, but the computation time will be worse. The recommended value for this option is 320x240. For this example the size of the image to detect faces has been fixed to 160, if you want to change this parameter you have to create a pipeline composed by face and ear detector  </li>
 	    <li><b>Scale Factor</b>The algorithm uses different images to detect ears. The following image to the original are gradually reducing its size. With this parameter we indicate such reduction between images. The smaller the reduction, the stronger the detection but the computation time will be worse. In this case, the reduction for the ear detector is fixed to 10%, higher values result that the algorithm does not work too well. Therefore, the scale factor is used for face detection </li>
 	    <li><b>Show Ears</b>If you check the checkbox, you will see the ears detected on the remote stream</li>				
 	  </ul>

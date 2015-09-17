@@ -31,6 +31,7 @@
 #define FACE_TYPE "face"
 #define NOSE_SCALE_FACTOR 1.1
 #define GOP 4
+
 using namespace cv;
 
 #define KMS_NOSE_DETECT_LOCK(nose_detect)				\
@@ -172,6 +173,7 @@ static void kms_nose_send_event(KmsNoseDetect *nose_detect,GstVideoFrame *frame)
   char elem_id[10];
   vector<Rect> *fd=nose_detect->priv->faces;
   vector<Rect> *nd=nose_detect->priv->noses;
+  int norm_faces = nose_detect->priv->scale_o2f;
 
   message= gst_structure_new_empty("message");
   ts=gst_structure_new("time",
@@ -184,24 +186,24 @@ static void kms_nose_send_event(KmsNoseDetect *nose_detect,GstVideoFrame *frame)
     {
       face = gst_structure_new("face",
 			       "type", G_TYPE_STRING,"face", 
-			       "x", G_TYPE_UINT,(guint) r->x, 
-			       "y", G_TYPE_UINT,(guint) r->y, 
-			       "width",G_TYPE_UINT, (guint)r->width,
-			       "height",G_TYPE_UINT, (guint)r->height,
+			       "x", G_TYPE_UINT,(guint) r->x * norm_faces, 
+			       "y", G_TYPE_UINT,(guint) r->y * norm_faces, 
+			       "width",G_TYPE_UINT, (guint)r->width * norm_faces,
+			       "height",G_TYPE_UINT, (guint)r->height * norm_faces,
 			       NULL);
       sprintf(elem_id,"%d",i);
       gst_structure_set(message,elem_id,GST_TYPE_STRUCTURE, face,NULL);
       gst_structure_free(face);
 
     }
-  
+  //noses were already normalized on kms_noses_detect_process_frame.
   for(  vector<Rect>::const_iterator m = nd->begin(); m != nd->end(); m++,i++ )
     {
       nose = gst_structure_new("noses",
 			       "type", G_TYPE_STRING,"nose", 
-			       "x", G_TYPE_UINT,(guint) m->x, 
-			       "y", G_TYPE_UINT,(guint) m->y, 
-			       "width",G_TYPE_UINT, (guint)m->width,
+			       "x", G_TYPE_UINT,(guint) m->x , 
+			       "y", G_TYPE_UINT,(guint) m->y , 
+			       "width",G_TYPE_UINT, (guint)m->width ,
 			       "height",G_TYPE_UINT, (guint)m->height,
 			       NULL);
       sprintf(elem_id,"%d",i);
@@ -239,7 +241,12 @@ kms_nose_detect_conf_images (KmsNoseDetect *nose_detect,
 							    frame->info.height),
 						     IPL_DEPTH_8U, 3);
   
-  nose_detect->priv->scale_o2f = ((float)frame->info.width) / ((float)FACE_WIDTH);
+  if (nose_detect->priv->detect_event) 
+    /*If we receive faces through event, the coordinates are normalized to the img orig size*/
+    nose_detect->priv->scale_o2f = ((float)frame->info.width) / ((float)frame->info.width);
+  else 
+    nose_detect->priv->scale_o2f = ((float)frame->info.width) / ((float)FACE_WIDTH);
+  
   nose_detect->priv->scale_n2o= ((float)frame->info.width) / ((float)nose_detect->priv->width_to_process);
   nose_detect->priv->scale_f2n = ((float)nose_detect->priv->scale_o2f)/((float)nose_detect->priv->scale_n2o);
 
@@ -364,7 +371,6 @@ static bool __get_message(KmsNoseDetect *nose,
   int  id=0;
   char struct_id[10];
   const gchar *str_type;
-
   len = gst_structure_n_fields (message);
 
   nose->priv->faces->clear();
@@ -397,6 +403,7 @@ static bool __get_message(KmsNoseDetect *nose,
 	      gst_structure_get (data, "height", G_TYPE_UINT, & r.height, NULL);	  	 
 	      gst_structure_free (data);
 	      nose->priv->faces->push_back(r);
+	      
 	    }	  
 	  result=true;
 	}
@@ -556,7 +563,6 @@ static GstFlowReturn
 kms_nose_detect_transform_frame_ip (GstVideoFilter *filter,
 				    GstVideoFrame *frame)
 {
-  printf("In transform frame ip \n");
   KmsNoseDetect *nose_detect = KMS_NOSE_DETECT (filter);
   GstMapInfo info;
   double scale_o2f=0.0,scale_n2o=0.0,scale_f2n=0.0;
@@ -574,18 +580,16 @@ kms_nose_detect_transform_frame_ip (GstVideoFilter *filter,
   width = nose_detect->priv->img_width;
   height = nose_detect->priv->img_height;
 	
-  KMS_NOSE_DETECT_UNLOCK (nose_detect);
 
   kms_nose_detect_process_frame(nose_detect,width,height,scale_f2n,
 				scale_n2o,scale_o2f,frame->buffer->pts);
 
+  KMS_NOSE_DETECT_UNLOCK (nose_detect);
+
   if (1==nose_detect->priv->meta_data)
-    {
       kms_nose_send_event(nose_detect,frame);
-    }
 
   gst_buffer_unmap (frame->buffer, &info);
-
 
   return GST_FLOW_OK;
 }

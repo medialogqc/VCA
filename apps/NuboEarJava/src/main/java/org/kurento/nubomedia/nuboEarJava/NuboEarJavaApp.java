@@ -26,10 +26,10 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 /**
  * Chroma main class.
  * 
- * @author Boni Garcia (bgarcia@gsyc.es)
- * @author David Fernandez (d.fernandezlop@gmail.com)
+ * @author Victor Manuel Hidalgo (vmhidalgo@visual-tolls.com)
  * @since 5.0.0
  */
+
 @Configuration
 @EnableWebSocket
 @EnableAutoConfiguration
